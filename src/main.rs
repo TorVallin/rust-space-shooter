@@ -8,6 +8,10 @@ use bevy::{
     time::{Time, Timer, TimerMode},
     DefaultPlugins,
 };
+use bevy_rapier3d::{
+    prelude::{NoUserData, RapierPhysicsPlugin, Collider},
+    render::RapierDebugRenderPlugin,
+};
 
 #[derive(Default)]
 struct Player {
@@ -23,8 +27,7 @@ struct GameState {
 
 fn setup_cameras(mut commands: Commands, mut game: ResMut<GameState>) {
     commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 6.0, 2.0)
-            .looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        transform: Transform::from_xyz(0.0, 6.0, 2.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
         ..Default::default()
     });
 }
@@ -41,13 +44,14 @@ fn setup_game_state(
         commands
             .spawn(SceneBundle {
                 transform: Transform {
-                    translation: Vec3::new(0.0, 0.0, 0.0),
+                    translation: Vec3::new(0.0, 0.0, 1.5),
                     rotation: Quat::from_rotation_y(90.0_f32.to_radians()),
                     ..Default::default()
                 },
                 scene: asset_server.load("Spaceship4/model.obj"),
                 ..Default::default()
             })
+            .insert(Collider::cylinder(0.25, 0.3))
             .id(),
     );
 
@@ -77,17 +81,18 @@ fn player_controls(
     let mut transform = transforms.get_mut(player).unwrap();
     let mut translation = transform.translation;
 
+    let move_speed = 3.0;
     // Move left and right with A/D
     if input.pressed(KeyCode::A) {
-        translation.x -= 1.0 * time.delta_seconds();
+        translation.x -= move_speed * time.delta_seconds();
         *transform = Transform {
             translation,
-            rotation: transform.rotation, 
+            rotation: transform.rotation,
             ..Default::default()
         }
     }
     if input.pressed(KeyCode::D) {
-        translation.x += 1.0 * time.delta_seconds();
+        translation.x += move_speed * time.delta_seconds();
         *transform = Transform {
             translation,
             rotation: transform.rotation,
@@ -99,6 +104,8 @@ fn player_controls(
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, bevy_obj::ObjPlugin))
+        .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
+        .add_plugins(RapierDebugRenderPlugin::default())
         .init_resource::<GameState>()
         .add_systems(Startup, (setup_cameras, setup_game_state))
         .add_systems(Update, player_controls)
