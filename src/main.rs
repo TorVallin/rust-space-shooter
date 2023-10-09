@@ -6,10 +6,14 @@ use bevy::{
     },
     scene::SceneBundle,
     time::{Time, Timer, TimerMode},
+    transform::TransformBundle,
     DefaultPlugins,
 };
 use bevy_rapier3d::{
-    prelude::{NoUserData, RapierPhysicsPlugin, Collider},
+    prelude::{
+        ActiveEvents, Ccd, Collider, NoUserData, RapierContext, RapierPhysicsPlugin, RigidBody,
+        Sensor, Sleeping, GravityScale,
+    },
     render::RapierDebugRenderPlugin,
 };
 
@@ -25,7 +29,10 @@ struct GameState {
     score: u32,
 }
 
-fn setup_cameras(mut commands: Commands, mut game: ResMut<GameState>) {
+#[derive(Component)]
+struct EnemyBullet {}
+
+fn setup_cameras(mut commands: Commands, _: ResMut<GameState>) {
     commands.spawn(Camera3dBundle {
         transform: Transform::from_xyz(0.0, 6.0, 2.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
         ..Default::default()
@@ -51,7 +58,10 @@ fn setup_game_state(
                 scene: asset_server.load("Spaceship4/model.obj"),
                 ..Default::default()
             })
+            .insert(RigidBody::Dynamic)
+            .insert(GravityScale(0.0))
             .insert(Collider::cylinder(0.25, 0.3))
+            .insert(ActiveEvents::COLLISION_EVENTS)
             .id(),
     );
 
@@ -67,6 +77,14 @@ fn setup_game_state(
         },
         ..Default::default()
     });
+
+    commands
+        .spawn(Collider::cuboid(0.5, 1.0, 2.0))
+        .insert(RigidBody::Fixed)
+        .insert(Sensor)
+        .insert(EnemyBullet {})
+        .insert(ActiveEvents::COLLISION_EVENTS)
+        .insert(TransformBundle::from(Transform::from_xyz(2.0, 0.0, 2.0)));
 }
 
 fn player_controls(
@@ -109,5 +127,24 @@ fn main() {
         .init_resource::<GameState>()
         .add_systems(Startup, (setup_cameras, setup_game_state))
         .add_systems(Update, player_controls)
+        .add_systems(Update, check_intersections)
         .run();
+}
+
+fn check_intersections(
+    game: ResMut<GameState>,
+    rapier_context: Res<RapierContext>,
+    enemy_bullets: Query<Entity, (With<Collider>, With<EnemyBullet>)>,
+) {
+    for bullet in &enemy_bullets {
+        let player = game.player.entity.unwrap();
+
+        // Checks for intersections between the player and the enemy bullet
+        if rapier_context.intersection_pair(player, bullet) == Some(true) {
+            println!(
+                "The entities {:?} and {:?} have intersecting colliders!",
+                player, bullet
+            );
+        }
+    }
 }
