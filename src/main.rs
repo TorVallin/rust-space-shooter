@@ -1,12 +1,17 @@
+mod combat;
+mod enemy;
+mod plugins;
+
 use std::ops::Add;
 
+use crate::plugins::enemy_wave_plugin::EnemyWavePlugin;
 use bevy::{
     core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     prelude::{
-        shape, App, AssetServer, Assets, BuildChildren, Camera, Camera3dBundle, Commands,
+        shape, App, AssetServer, Assets, BuildChildren, Camera, Camera3dBundle, Color, Commands,
         Component, Entity, Input, KeyCode, Mesh, PbrBundle, PointLight, PointLightBundle, Quat,
         Query, Res, ResMut, Resource, SpatialBundle, StandardMaterial, Startup, Transform, Update,
-        Vec3, With, Color,
+        Vec3, With,
     },
     scene::SceneBundle,
     time::Time,
@@ -41,6 +46,20 @@ struct EnemyBullet {}
 struct Bullet {
     up_direction: bool,
     velocity: f32,
+    damage: u32,
+}
+
+fn main() {
+    App::new()
+        .add_plugins((DefaultPlugins, bevy_obj::ObjPlugin))
+        .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
+        .add_plugins(RapierDebugRenderPlugin::default())
+        .add_plugins(EnemyWavePlugin)
+        .init_resource::<GameState>()
+        .add_systems(Startup, (setup_cameras, setup_game_state))
+        .add_systems(Update, (player_controls, bullet_controls))
+        .add_systems(Update, check_intersections)
+        .run();
 }
 
 fn setup_cameras(mut commands: Commands, _: ResMut<GameState>) {
@@ -101,14 +120,6 @@ fn setup_game_state(
         },
         ..Default::default()
     });
-
-    commands
-        .spawn(Collider::cuboid(0.5, 1.0, 2.0))
-        .insert(RigidBody::Fixed)
-        .insert(Sensor)
-        .insert(EnemyBullet {})
-        .insert(ActiveEvents::COLLISION_EVENTS)
-        .insert(TransformBundle::from(Transform::from_xyz(2.0, 0.0, 2.0)));
 }
 
 fn player_controls(
@@ -161,6 +172,7 @@ fn player_controls(
             .insert(Bullet {
                 up_direction: true,
                 velocity: 7.5,
+                damage: 1
             })
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(TransformBundle::from(Transform::from_translation(
@@ -184,18 +196,6 @@ fn player_controls(
                 });
             });
     }
-}
-
-fn main() {
-    App::new()
-        .add_plugins((DefaultPlugins, bevy_obj::ObjPlugin))
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
-        .add_plugins(RapierDebugRenderPlugin::default())
-        .init_resource::<GameState>()
-        .add_systems(Startup, (setup_cameras, setup_game_state))
-        .add_systems(Update, (player_controls, bullet_controls))
-        .add_systems(Update, check_intersections)
-        .run();
 }
 
 fn check_intersections(
