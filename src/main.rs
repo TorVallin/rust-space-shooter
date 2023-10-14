@@ -9,13 +9,14 @@ use bevy::{
     core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     prelude::{
         shape, App, AssetServer, Assets, BuildChildren, Camera, Camera3dBundle, Color, Commands,
-        Component, Entity, Input, KeyCode, Mesh, PbrBundle, PointLight, PointLightBundle, Quat,
-        Query, Res, ResMut, Resource, SpatialBundle, StandardMaterial, Startup, Transform, Update,
-        Vec3, With,
+        Component, Entity, Input, KeyCode, Mesh, PbrBundle, PluginGroup, PointLight,
+        PointLightBundle, Quat, Query, Res, ResMut, Resource, SpatialBundle, StandardMaterial,
+        Startup, Transform, Update, Vec2, Vec3, With,
     },
     scene::SceneBundle,
     time::Time,
     transform::TransformBundle,
+    window::{Window, WindowResized},
     DefaultPlugins,
 };
 use bevy_rapier3d::{
@@ -49,17 +50,33 @@ struct Bullet {
     damage: u32,
 }
 
+#[derive(Resource)]
+struct ResolutionSettings {
+    standard: Vec2,
+}
+
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, bevy_obj::ObjPlugin))
+        .insert_resource(ResolutionSettings {
+            standard: Vec2::new(600.0, 1000.0),
+        })
+        .add_plugins(DefaultPlugins)
+        .add_plugins(bevy_obj::ObjPlugin)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
         .add_plugins(EnemyWavePlugin)
         .init_resource::<GameState>()
+        .add_systems(Startup, set_resolution)
         .add_systems(Startup, (setup_cameras, setup_game_state))
         .add_systems(Update, (player_controls, bullet_controls))
         .add_systems(Update, check_intersections)
         .run();
+}
+
+fn set_resolution(mut windows: Query<&mut Window>, resolution: Res<ResolutionSettings>) {
+    let mut window = windows.single_mut();
+    let resolution = resolution.standard;
+    window.resolution.set(resolution.x, resolution.y);
 }
 
 fn setup_cameras(mut commands: Commands, _: ResMut<GameState>) {
@@ -172,7 +189,7 @@ fn player_controls(
             .insert(Bullet {
                 up_direction: true,
                 velocity: 7.5,
-                damage: 1
+                damage: 1,
             })
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(TransformBundle::from(Transform::from_translation(

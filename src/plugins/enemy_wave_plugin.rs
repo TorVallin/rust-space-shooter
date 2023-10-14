@@ -82,16 +82,16 @@ fn get_waves() -> Vec<Wave> {
                 ship_type: EnemyType::Type1,
                 health: 2,
             },
-            // EnemyInstance {
-            //     position: [-1, -3],
-            //     ship_type: EnemyType::Type1,
-            //     health: 2,
-            // },
-            // EnemyInstance {
-            //     position: [1, -5],
-            //     ship_type: EnemyType::Type1,
-            //     health: 2,
-            // },
+            EnemyInstance {
+                position: [1, -1],
+                ship_type: EnemyType::Type1,
+                health: 2,
+            },
+            EnemyInstance {
+                position: [1, -2],
+                ship_type: EnemyType::Type1,
+                health: 2,
+            },
         ],
     }];
 
