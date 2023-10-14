@@ -1,8 +1,11 @@
 use bevy::{
-    prelude::{AssetServer, Commands, Plugin, Quat, Res, Startup, Transform, Vec3},
+    prelude::{
+        AssetServer, BuildChildren, Commands, Plugin, Quat, Res, SpatialBundle, Startup, Transform,
+        Vec3,
+    },
     scene::SceneBundle,
 };
-use bevy_rapier3d::prelude::{ActiveEvents, Collider, GravityScale, RigidBody};
+use bevy_rapier3d::prelude::{ActiveEvents, Collider, GravityScale, RigidBody, Sensor};
 
 use crate::{combat::Health, enemy::Enemy};
 
@@ -45,26 +48,31 @@ fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetSer
     for enemy in wave.enemies.iter() {
         commands
             .spawn(Enemy {})
+            .insert(SpatialBundle {
+                transform: Transform::from_translation(Vec3::new(
+                    enemy.position[0] as f32 * x_spacing,
+                    0.0,
+                    enemy.position[1] as f32 * z_spacing,
+                )),
+                ..Default::default()
+            })
             .insert(Health {
                 health: enemy.health,
-            })
-            .insert(SceneBundle {
-                transform: Transform {
-                    translation: Vec3::new(
-                        enemy.position[0] as f32 * x_spacing,
-                        0.0,
-                        enemy.position[1] as f32 * z_spacing,
-                    ),
-                    scale: Vec3::new(0.001, 0.001, 0.001),
-                    ..Default::default()
-                },
-                scene: asset_server.load(enemy.ship_type.get_ship_path()),
-                ..Default::default()
             })
             .insert(RigidBody::Dynamic)
             .insert(GravityScale(0.0))
             .insert(Collider::cylinder(0.25, 0.3))
-            .insert(ActiveEvents::COLLISION_EVENTS);
+            .insert(ActiveEvents::COLLISION_EVENTS)
+            .with_children(|children| {
+                children.spawn(SceneBundle {
+                    transform: Transform {
+                        scale: Vec3::new(0.001, 0.001, 0.001),
+                        ..Default::default()
+                    },
+                    scene: asset_server.load(enemy.ship_type.get_ship_path()),
+                    ..Default::default()
+                });
+            });
     }
 }
 
