@@ -1,10 +1,12 @@
 use std::ops::Add;
 
 use bevy::{
+    core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     prelude::{
-        App, AssetServer, Camera3dBundle, Commands, Component, Entity, Input, KeyCode, PointLight,
-        PointLightBundle, Quat, Query, Res, ResMut, Resource, Startup, Transform, Update, Vec3,
-        With,
+        shape, App, AssetServer, Assets, BuildChildren, Camera, Camera3dBundle, Commands,
+        Component, Entity, Input, KeyCode, Mesh, PbrBundle, PointLight, PointLightBundle, Quat,
+        Query, Res, ResMut, Resource, SpatialBundle, StandardMaterial, Startup, Transform, Update,
+        Vec3, With, Color,
     },
     scene::SceneBundle,
     time::Time,
@@ -42,10 +44,19 @@ struct Bullet {
 }
 
 fn setup_cameras(mut commands: Commands, _: ResMut<GameState>) {
-    commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 6.0, 2.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
-        ..Default::default()
-    });
+    commands.spawn((
+        Camera3dBundle {
+            camera: Camera {
+                hdr: true,
+                ..Default::default()
+            },
+            tonemapping: Tonemapping::TonyMcMapface,
+            transform: Transform::from_xyz(0.0, 6.0, 2.0)
+                .looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+            ..Default::default()
+        },
+        BloomSettings::default(),
+    ));
 }
 
 fn setup_game_state(
@@ -102,6 +113,8 @@ fn setup_game_state(
 
 fn player_controls(
     mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     input: Res<Input<KeyCode>>,
     game: ResMut<GameState>,
     mut player_query: Query<(&mut Transform, &mut Player)>,
@@ -141,7 +154,8 @@ fn player_controls(
     if can_shoot && input.pressed(KeyCode::Space) {
         player.1.bullet_cooldown = player.1.bullet_cooldown_timer;
         commands
-            .spawn(Collider::cuboid(0.05, 0.05, 0.1))
+            .spawn(SpatialBundle::default())
+            .insert(Collider::cuboid(0.05, 0.05, 0.1))
             .insert(RigidBody::Fixed)
             .insert(Sensor)
             .insert(Bullet {
@@ -151,7 +165,24 @@ fn player_controls(
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(TransformBundle::from(Transform::from_translation(
                 translation.add(Vec3::new(0.0, 0.0, -0.5)),
-            )));
+            )))
+            .with_children(|children| {
+                children.spawn(PbrBundle {
+                    mesh: meshes.add(Mesh::from(shape::Capsule {
+                        radius: 0.05,
+                        depth: 0.10,
+                        ..Default::default()
+                    })),
+                    transform: Transform::from_rotation(Quat::from_rotation_x(
+                        -90.0f32.to_radians(),
+                    )),
+                    material: materials.add(StandardMaterial {
+                        emissive: Color::rgb_linear(35.0, 1.0, 2.0),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                });
+            });
     }
 }
 
