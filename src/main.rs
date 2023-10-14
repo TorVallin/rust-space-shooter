@@ -26,6 +26,8 @@ use bevy_rapier3d::{
     },
     render::RapierDebugRenderPlugin,
 };
+use combat::{Bullet, EnemyBullet, PlayerBullet};
+use enemy::Enemy;
 
 #[derive(Component, Default)]
 struct Player {
@@ -38,16 +40,6 @@ struct Player {
 struct GameState {
     player: Option<Entity>,
     score: u32,
-}
-
-#[derive(Component)]
-struct EnemyBullet {}
-
-#[derive(Component)]
-struct Bullet {
-    up_direction: bool,
-    velocity: f32,
-    damage: u32,
 }
 
 #[derive(Resource)]
@@ -69,7 +61,7 @@ fn main() {
         .add_systems(Startup, set_resolution)
         .add_systems(Startup, (setup_cameras, setup_game_state))
         .add_systems(Update, (player_controls, bullet_controls))
-        .add_systems(Update, check_intersections)
+        .add_systems(Update, (check_damage_to_player, check_damage_to_enemies))
         .run();
 }
 
@@ -191,6 +183,7 @@ fn player_controls(
                 velocity: 7.5,
                 damage: 1,
             })
+            .insert(PlayerBullet {})
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(TransformBundle::from(Transform::from_translation(
                 translation.add(Vec3::new(0.0, 0.0, -0.5)),
@@ -215,7 +208,7 @@ fn player_controls(
     }
 }
 
-fn check_intersections(
+fn check_damage_to_player(
     game: ResMut<GameState>,
     rapier_context: Res<RapierContext>,
     enemy_bullets: Query<Entity, (With<Collider>, With<EnemyBullet>)>,
@@ -224,11 +217,19 @@ fn check_intersections(
         let player = game.player.unwrap();
 
         // Checks for intersections between the player and the enemy bullet
-        if rapier_context.intersection_pair(player, bullet) == Some(true) {
-            println!(
-                "The entities {:?} and {:?} have intersecting colliders!",
-                player, bullet
-            );
+        if rapier_context.intersection_pair(player, bullet) == Some(true) {}
+    }
+}
+
+fn check_damage_to_enemies(
+    rapier_context: Res<RapierContext>,
+    player_bullets: Query<Entity, With<PlayerBullet>>,
+    enemies: Query<Entity, (With<Collider>, With<Enemy>)>,
+) {
+    for bullet in &player_bullets {
+        for enemy in &enemies {
+            // Checks for intersections between the player bullet and the enemies
+            if rapier_context.intersection_pair(enemy, bullet) == Some(true) {}
         }
     }
 }
