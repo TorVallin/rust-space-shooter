@@ -7,7 +7,7 @@ use bevy::{
 };
 use bevy_rapier3d::prelude::{ActiveEvents, Collider, GravityScale, RigidBody, Sensor};
 
-use crate::{combat::Health, enemy::Enemy};
+use crate::{combat::Damageable, enemy::Enemy};
 
 pub struct EnemyWavePlugin;
 
@@ -56,8 +56,9 @@ fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetSer
                 )),
                 ..Default::default()
             })
-            .insert(Health {
+            .insert(Damageable {
                 health: enemy.health,
+                is_player: false,
             })
             .insert(RigidBody::Dynamic)
             .insert(GravityScale(0.0))

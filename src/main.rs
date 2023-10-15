@@ -9,14 +9,14 @@ use bevy::{
     core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     prelude::{
         shape, App, AssetServer, Assets, BuildChildren, Camera, Camera3dBundle, Color, Commands,
-        Component, Entity, Input, KeyCode, Mesh, PbrBundle, PluginGroup, PointLight,
+        Component, DespawnRecursiveExt, Entity, Input, KeyCode, Mesh, PbrBundle, PointLight,
         PointLightBundle, Quat, Query, Res, ResMut, Resource, SpatialBundle, StandardMaterial,
         Startup, Transform, Update, Vec2, Vec3, With,
     },
     scene::SceneBundle,
     time::Time,
     transform::TransformBundle,
-    window::{Window, WindowResized},
+    window::Window,
     DefaultPlugins,
 };
 use bevy_rapier3d::{
@@ -26,8 +26,7 @@ use bevy_rapier3d::{
     },
     render::RapierDebugRenderPlugin,
 };
-use combat::{Bullet, EnemyBullet, PlayerBullet};
-use enemy::Enemy;
+use combat::{Bullet, Damageable};
 
 #[derive(Component, Default)]
 struct Player {
@@ -61,7 +60,7 @@ fn main() {
         .add_systems(Startup, set_resolution)
         .add_systems(Startup, (setup_cameras, setup_game_state))
         .add_systems(Update, (player_controls, bullet_controls))
-        .add_systems(Update, (check_damage_to_player, check_damage_to_enemies))
+        .add_systems(Update, check_bullet_damage)
         .run();
 }
 
@@ -110,7 +109,7 @@ fn setup_game_state(
             .insert(Collider::cylinder(0.25, 0.3))
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(Player {
-                lives: 0,
+                lives: 3,
                 bullet_cooldown: 0.0,
                 bullet_cooldown_timer: 0.25,
             })
@@ -179,11 +178,11 @@ fn player_controls(
             .insert(RigidBody::Fixed)
             .insert(Sensor)
             .insert(Bullet {
+                is_player_bullet: true,
                 up_direction: true,
                 velocity: 7.5,
                 damage: 1,
             })
-            .insert(PlayerBullet {})
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(TransformBundle::from(Transform::from_translation(
                 translation.add(Vec3::new(0.0, 0.0, -0.5)),
@@ -208,28 +207,29 @@ fn player_controls(
     }
 }
 
-fn check_damage_to_player(
-    game: ResMut<GameState>,
+fn check_bullet_damage(
+    mut commands: Commands,
     rapier_context: Res<RapierContext>,
-    enemy_bullets: Query<Entity, (With<Collider>, With<EnemyBullet>)>,
+    mut damageables: Query<(Entity, &mut Damageable), (With<Collider>, With<Damageable>)>,
+    bullets: Query<(Entity, &Bullet), With<Collider>>,
 ) {
-    for bullet in &enemy_bullets {
-        let player = game.player.unwrap();
+    // TODO: Consider doing the deletion, spawning particle effects, etc. in another system
 
-        // Checks for intersections between the player and the enemy bullet
-        if rapier_context.intersection_pair(player, bullet) == Some(true) {}
-    }
-}
+    for (damageable_entity, mut damageable) in damageables.iter_mut() {
+        for (bullet_entity, bullet) in &bullets {
+            // Check what the bullets are hitting
 
-fn check_damage_to_enemies(
-    rapier_context: Res<RapierContext>,
-    player_bullets: Query<Entity, With<PlayerBullet>>,
-    enemies: Query<Entity, (With<Collider>, With<Enemy>)>,
-) {
-    for bullet in &player_bullets {
-        for enemy in &enemies {
-            // Checks for intersections between the player bullet and the enemies
-            if rapier_context.intersection_pair(enemy, bullet) == Some(true) {}
+            // Checks for intersections between the player and the enemy bullet
+            if rapier_context.intersection_pair(damageable_entity, bullet_entity) == Some(true) {
+                damageable.health -= bullet.damage;
+
+                if damageable.is_player != bullet.is_player_bullet {
+                    commands.entity(bullet_entity).despawn_recursive();
+                    if damageable.health <= 0 {
+                        commands.entity(damageable_entity).despawn_recursive();
+                    }
+                }
+            }
         }
     }
 }
