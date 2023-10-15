@@ -18,3 +18,4 @@ bevy_rapier3d = { version = "0.22.0", features = [
     "simd-stable",
     "debug-render-3d",
 ] }
+bevy_hanabi = "0.7"
