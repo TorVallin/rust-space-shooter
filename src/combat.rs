@@ -1,4 +1,10 @@
-use bevy::prelude::Component;
+use bevy::prelude::{Component, Vec3};
+
+#[derive(Component)]
+pub struct DeathEffect {
+    pub position: Vec3,  // Where the death occured
+    pub is_player: bool, // If it was the player (true) or an enemy that died
+}
 
 #[derive(Component)]
 pub struct Damageable {

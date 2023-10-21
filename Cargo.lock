@@ -3004,6 +3004,7 @@ dependencies = [
  "bevy_hanabi",
  "bevy_obj",
  "bevy_rapier3d",
+ "rand",
 ]
 
 [[package]]
