@@ -37,18 +37,15 @@ use bevy_rapier3d::{
     },
     render::RapierDebugRenderPlugin,
 };
-use combat::{Bullet, Damageable};
+use combat::{Bullet, Damageable, DeathEffect};
+use plugins::powerups::{Powerup, PowerupPlugin};
 
 #[derive(Component, Default)]
 struct Player {
     lives: u32,
     bullet_cooldown: f32,
     bullet_cooldown_timer: f32,
-}
-
-#[derive(Component)]
-struct DeathEffect {
-    position: Vec3,
+    active_powerup: Option<Powerup>,
 }
 
 #[derive(Resource, Default)]
@@ -77,7 +74,7 @@ fn main() {
         .add_plugins(bevy_obj::ObjPlugin)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
-        .add_plugins(EnemyWavePlugin)
+        .add_plugins((EnemyWavePlugin, PowerupPlugin))
         .init_resource::<GameState>()
         .add_systems(Startup, set_resolution)
         .add_systems(
@@ -138,6 +135,7 @@ fn setup_game_state(
                 lives: 3,
                 bullet_cooldown: 0.0,
                 bullet_cooldown_timer: 0.25,
+                active_powerup: None,
             })
             .id(),
     );
@@ -309,10 +307,11 @@ fn check_bullet_damage(
         for (bullet_entity, bullet) in &bullets {
             // Check what the bullets are hitting
 
-            // Checks for intersections between the player and the enemy bullet
+            // Checks for intersections between Damageable things and the bullets
             if rapier_context.intersection_pair(damageable_entity, bullet_entity) == Some(true) {
                 damageable.health -= bullet.damage;
 
+                // Prevent the player from damaging itself & enemies from damaging eachother
                 if damageable.is_player != bullet.is_player_bullet {
                     commands.entity(bullet_entity).despawn_recursive();
                     if damageable.health <= 0 {
@@ -321,6 +320,7 @@ fn check_bullet_damage(
                         // Spawn a particle system as a death effect
                         commands.spawn(DeathEffect {
                             position: position.translation,
+                            is_player: damageable.is_player,
                         });
                     }
                 }
@@ -331,8 +331,7 @@ fn check_bullet_damage(
 
 fn bullet_controls(
     _: ResMut<GameState>,
-    mut bullets: Query<(&mut Transform, &Bullet), (With<Collider>, With<Bullet>)>,
-
+    mut bullets: Query<(&mut Transform, &Bullet), With<Collider>>,
     time: Res<Time>,
 ) {
     let delta_time = time.delta_seconds();
