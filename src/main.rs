@@ -1,15 +1,34 @@
+mod combat;
+mod enemy;
+mod plugins;
+
 use std::ops::Add;
 
+use crate::plugins::enemy_wave_plugin::EnemyWavePlugin;
 use bevy::{
+    core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     prelude::{
-        App, AssetServer, Camera3dBundle, Commands, Component, Entity, Input, KeyCode, PointLight,
-        PointLightBundle, Quat, Query, Res, ResMut, Resource, Startup, Transform, Update, Vec3,
-        With,
+        shape, App, AssetServer, Assets, BuildChildren, Camera, Camera3dBundle, Color, Commands,
+        Component, DespawnRecursiveExt, Entity, Input, KeyCode, Mesh, Name, PbrBundle, PluginGroup,
+        PointLight, PointLightBundle, Quat, Query, Res, ResMut, Resource, SpatialBundle,
+        StandardMaterial, Startup, Transform, Update, Vec2, Vec3, Vec4, With,
+    },
+    render::{
+        settings::{WgpuFeatures, WgpuSettings},
+        RenderPlugin,
     },
     scene::SceneBundle,
     time::Time,
     transform::TransformBundle,
+    window::Window,
     DefaultPlugins,
+};
+use bevy_hanabi::{
+    AccelModifier, Attribute, ColorOverLifetimeModifier, CompiledParticleEffect, EffectAsset,
+    EffectSpawner, ExprWriter, Gradient, HanabiPlugin, LinearDragModifier, ParticleEffect,
+    ParticleEffectBundle, ScalarType, SetAttributeModifier, SetPositionSphereModifier,
+    SetSizeModifier, SetVelocityCircleModifier, SetVelocitySphereModifier, ShapeDimension,
+    SizeOverLifetimeModifier, Spawner,
 };
 use bevy_rapier3d::{
     prelude::{
@@ -18,6 +37,7 @@ use bevy_rapier3d::{
     },
     render::RapierDebugRenderPlugin,
 };
+use combat::{Bullet, Damageable};
 
 #[derive(Component, Default)]
 struct Player {
@@ -26,26 +46,70 @@ struct Player {
     bullet_cooldown_timer: f32,
 }
 
+#[derive(Component)]
+struct DeathEffect {
+    position: Vec3,
+}
+
 #[derive(Resource, Default)]
 struct GameState {
     player: Option<Entity>,
     score: u32,
 }
 
-#[derive(Component)]
-struct EnemyBullet {}
+#[derive(Resource)]
+struct ResolutionSettings {
+    standard: Vec2,
+}
 
-#[derive(Component)]
-struct Bullet {
-    up_direction: bool,
-    velocity: f32,
+fn main() {
+    let mut wgpu_settings = WgpuSettings::default();
+    wgpu_settings
+        .features
+        .set(WgpuFeatures::VERTEX_WRITABLE_STORAGE, true);
+
+    App::new()
+        .insert_resource(ResolutionSettings {
+            standard: Vec2::new(600.0, 1000.0),
+        })
+        .add_plugins(DefaultPlugins.set(RenderPlugin { wgpu_settings }))
+        .add_plugins(HanabiPlugin)
+        .add_plugins(bevy_obj::ObjPlugin)
+        .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
+        .add_plugins(RapierDebugRenderPlugin::default())
+        .add_plugins(EnemyWavePlugin)
+        .init_resource::<GameState>()
+        .add_systems(Startup, set_resolution)
+        .add_systems(
+            Startup,
+            (setup_cameras, setup_game_state, setup_particle_systems),
+        )
+        .add_systems(Update, (player_controls, bullet_controls))
+        .add_systems(Update, check_bullet_damage)
+        .add_systems(Update, create_explosion_particle_system)
+        .run();
+}
+
+fn set_resolution(mut windows: Query<&mut Window>, resolution: Res<ResolutionSettings>) {
+    let mut window = windows.single_mut();
+    let resolution = resolution.standard;
+    window.resolution.set(resolution.x, resolution.y);
 }
 
 fn setup_cameras(mut commands: Commands, _: ResMut<GameState>) {
-    commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 6.0, 2.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
-        ..Default::default()
-    });
+    commands.spawn((
+        Camera3dBundle {
+            camera: Camera {
+                hdr: true,
+                ..Default::default()
+            },
+            tonemapping: Tonemapping::TonyMcMapface,
+            transform: Transform::from_xyz(0.0, 20.0, 2.0)
+                .looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+            ..Default::default()
+        },
+        BloomSettings::default(),
+    ));
 }
 
 fn setup_game_state(
@@ -59,7 +123,7 @@ fn setup_game_state(
         commands
             .spawn(SceneBundle {
                 transform: Transform {
-                    translation: Vec3::new(0.0, 0.0, 1.5),
+                    translation: Vec3::new(0.0, 0.0, 7.0),
                     rotation: Quat::from_rotation_y(90.0_f32.to_radians()),
                     ..Default::default()
                 },
@@ -71,7 +135,7 @@ fn setup_game_state(
             .insert(Collider::cylinder(0.25, 0.3))
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(Player {
-                lives: 0,
+                lives: 3,
                 bullet_cooldown: 0.0,
                 bullet_cooldown_timer: 0.25,
             })
@@ -90,18 +154,73 @@ fn setup_game_state(
         },
         ..Default::default()
     });
+}
+
+fn setup_particle_systems(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {
+    let spawner = Spawner::once(1000.0.into(), false);
+
+    let writer = ExprWriter::new();
+
+    let age = writer.lit(0.).uniform(writer.lit(0.2)).expr();
+    let init_age = SetAttributeModifier::new(Attribute::AGE, age);
+    let lifetime = writer.lit(0.25).expr();
+    let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, lifetime);
+
+    let drag = writer.lit(2.).expr();
+    let update_drag = LinearDragModifier::new(drag);
+
+    let mut color_gradient1 = Gradient::new();
+    color_gradient1.add_key(0.0, Vec4::new(4.0, 4.0, 4.0, 1.0));
+    color_gradient1.add_key(0.1, Vec4::new(4.0, 4.0, 0.0, 1.0));
+    color_gradient1.add_key(0.9, Vec4::new(4.0, 0.0, 0.0, 1.0));
+    color_gradient1.add_key(1.0, Vec4::new(4.0, 0.0, 0.0, 0.0));
+
+    let mut size_gradient1 = Gradient::new();
+    size_gradient1.add_key(0.0, Vec2::splat(0.1));
+    size_gradient1.add_key(0.3, Vec2::splat(0.1));
+    size_gradient1.add_key(1.0, Vec2::splat(0.0));
+
+    let init_pos = SetPositionSphereModifier {
+        center: writer.lit(Vec3::ZERO).expr(),
+        radius: writer.lit(0.5).expr(),
+        dimension: ShapeDimension::Volume,
+    };
+
+    let init_vel = SetVelocitySphereModifier {
+        center: writer.lit(Vec3::ZERO).expr(),
+        speed: (writer.rand(ScalarType::Float) * writer.lit(5.0) + writer.lit(10.0)).expr(),
+    };
+
+    let effect = effects.add(
+        EffectAsset::new(32768, spawner, writer.finish())
+            .with_name("death_effect")
+            .init(init_pos)
+            .init(init_vel)
+            .init(init_age)
+            .init(init_lifetime)
+            .update(update_drag)
+            .render(ColorOverLifetimeModifier {
+                gradient: color_gradient1,
+            })
+            .render(SizeOverLifetimeModifier {
+                gradient: size_gradient1,
+                screen_space_size: false,
+            }),
+        // .render(SetSizeModifier {
+        //     size: Vec2::splat(10.).into(),
+        //     screen_space_size: true,
+        // }),
+    );
 
     commands
-        .spawn(Collider::cuboid(0.5, 1.0, 2.0))
-        .insert(RigidBody::Fixed)
-        .insert(Sensor)
-        .insert(EnemyBullet {})
-        .insert(ActiveEvents::COLLISION_EVENTS)
-        .insert(TransformBundle::from(Transform::from_xyz(2.0, 0.0, 2.0)));
+        .spawn(ParticleEffectBundle::new(effect).with_spawner(spawner))
+        .insert(Name::new("effect"));
 }
 
 fn player_controls(
     mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     input: Res<Input<KeyCode>>,
     game: ResMut<GameState>,
     mut player_query: Query<(&mut Transform, &mut Player)>,
@@ -141,46 +260,71 @@ fn player_controls(
     if can_shoot && input.pressed(KeyCode::Space) {
         player.1.bullet_cooldown = player.1.bullet_cooldown_timer;
         commands
-            .spawn(Collider::cuboid(0.05, 0.05, 0.1))
+            .spawn(SpatialBundle::default())
+            .insert(Collider::cuboid(0.05, 0.05, 0.1))
             .insert(RigidBody::Fixed)
             .insert(Sensor)
             .insert(Bullet {
+                is_player_bullet: true,
                 up_direction: true,
                 velocity: 7.5,
+                damage: 1,
             })
             .insert(ActiveEvents::COLLISION_EVENTS)
             .insert(TransformBundle::from(Transform::from_translation(
                 translation.add(Vec3::new(0.0, 0.0, -0.5)),
-            )));
+            )))
+            .with_children(|children| {
+                children.spawn(PbrBundle {
+                    mesh: meshes.add(Mesh::from(shape::Capsule {
+                        radius: 0.05,
+                        depth: 0.10,
+                        ..Default::default()
+                    })),
+                    transform: Transform::from_rotation(Quat::from_rotation_x(
+                        -90.0f32.to_radians(),
+                    )),
+                    material: materials.add(StandardMaterial {
+                        emissive: Color::rgb_linear(35.0, 1.0, 2.0),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                });
+            });
     }
 }
 
-fn main() {
-    App::new()
-        .add_plugins((DefaultPlugins, bevy_obj::ObjPlugin))
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
-        .add_plugins(RapierDebugRenderPlugin::default())
-        .init_resource::<GameState>()
-        .add_systems(Startup, (setup_cameras, setup_game_state))
-        .add_systems(Update, (player_controls, bullet_controls))
-        .add_systems(Update, check_intersections)
-        .run();
-}
-
-fn check_intersections(
-    game: ResMut<GameState>,
+fn check_bullet_damage(
+    mut commands: Commands,
     rapier_context: Res<RapierContext>,
-    enemy_bullets: Query<Entity, (With<Collider>, With<EnemyBullet>)>,
+    mut damageables: Query<
+        (Entity, &mut Damageable, &Transform),
+        (With<Collider>, With<Damageable>),
+    >,
+    bullets: Query<(Entity, &Bullet), With<Collider>>,
 ) {
-    for bullet in &enemy_bullets {
-        let player = game.player.unwrap();
+    // TODO: Consider doing the deletion, spawning particle effects, etc. in another system
 
-        // Checks for intersections between the player and the enemy bullet
-        if rapier_context.intersection_pair(player, bullet) == Some(true) {
-            println!(
-                "The entities {:?} and {:?} have intersecting colliders!",
-                player, bullet
-            );
+    for (damageable_entity, mut damageable, position) in damageables.iter_mut() {
+        for (bullet_entity, bullet) in &bullets {
+            // Check what the bullets are hitting
+
+            // Checks for intersections between the player and the enemy bullet
+            if rapier_context.intersection_pair(damageable_entity, bullet_entity) == Some(true) {
+                damageable.health -= bullet.damage;
+
+                if damageable.is_player != bullet.is_player_bullet {
+                    commands.entity(bullet_entity).despawn_recursive();
+                    if damageable.health <= 0 {
+                        commands.entity(damageable_entity).despawn_recursive();
+
+                        // Spawn a particle system as a death effect
+                        commands.spawn(DeathEffect {
+                            position: position.translation,
+                        });
+                    }
+                }
+            }
         }
     }
 }
@@ -188,11 +332,33 @@ fn check_intersections(
 fn bullet_controls(
     _: ResMut<GameState>,
     mut bullets: Query<(&mut Transform, &Bullet), (With<Collider>, With<Bullet>)>,
+
     time: Res<Time>,
 ) {
     let delta_time = time.delta_seconds();
     for (mut transform, bullet) in bullets.iter_mut() {
         let direction = if bullet.up_direction { -1.0 } else { 1.0 };
         transform.translation.z += direction * bullet.velocity * delta_time;
+    }
+}
+
+fn create_explosion_particle_system(
+    mut commands: Commands,
+    mut effect: Query<(
+        &mut CompiledParticleEffect,
+        &mut EffectSpawner,
+        &mut Transform,
+    )>,
+    particle_effects: Query<(Entity, &DeathEffect)>,
+) {
+    let Ok((mut effect, mut spawner, mut effect_transform)) = effect.get_single_mut() else {
+        return;
+    };
+
+    for (entity, particle_effect) in particle_effects.iter() {
+        effect_transform.translation = particle_effect.position;
+
+        spawner.reset();
+        commands.entity(entity).despawn();
     }
 }
