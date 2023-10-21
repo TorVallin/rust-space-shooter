@@ -1,31 +1,31 @@
 use bevy::{
     prelude::{
-        shape, Assets, BuildChildren, Color, Commands, Component, Mesh, PbrBundle, Plugin, Quat,
-        Query, Res, ResMut, SpatialBundle, StandardMaterial, Transform, Update, Vec3, With,
+        shape, Assets, BuildChildren, Color, Commands, Component, DespawnRecursiveExt, Entity,
+        Mesh, PbrBundle, Plugin, Quat, Query, Res, ResMut, SpatialBundle, StandardMaterial,
+        Transform, Update, Vec3, With, Without,
     },
     time::Time,
     transform::TransformBundle,
 };
-use bevy_rapier3d::prelude::{ActiveEvents, Collider, RigidBody, Sensor};
+use bevy_rapier3d::prelude::{Collider, GravityScale, RapierContext, RigidBody, Sensor, Velocity};
 use rand::Rng;
 
-use crate::combat::DeathEffect;
+use crate::{combat::DeathEffect, Player};
 
-struct DoubleShot {}
-struct TripleShot {}
-
+#[derive(Clone)]
 pub enum Powerup {
     DoubleShot,
     TripleShot,
 }
 
-#[derive(Component)]
+#[derive(Clone)]
+struct DoubleShot {}
+#[derive(Clone)]
+struct TripleShot {}
+
+#[derive(Component, Clone)]
 pub struct PowerupComponent {
     powerup: Powerup,
-}
-
-#[derive(Component)]
-pub struct PowerupTimer {
     time_left: f32,
 }
 
@@ -35,12 +35,21 @@ impl Plugin for PowerupPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.add_systems(
             Update,
-            (
-                spawn_powerups,
-                update_powerup_positions,
-                detect_powerup_collisions,
-            ),
+            (update_powerups, spawn_powerups, detect_powerup_collisions),
         );
+    }
+}
+
+fn update_powerups(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut powerups: Query<(Entity, &mut PowerupComponent), With<Player>>,
+) {
+    for (entity, mut powerup) in powerups.iter_mut() {
+        powerup.time_left -= time.delta_seconds();
+        if powerup.time_left < 0.0 {
+            commands.entity(entity).remove::<PowerupComponent>();
+        }
     }
 }
 
@@ -57,20 +66,25 @@ fn spawn_powerups(
         }
 
         let prob = rng.gen::<f64>();
-        if true || prob < 0.1 {
+        if  prob < 0.1 {
             // Spawn a new powerup
             commands
                 .spawn(SpatialBundle::default())
                 .insert(PowerupComponent {
                     powerup: Powerup::DoubleShot,
+                    time_left: 5.0,
                 })
+                .insert(RigidBody::Dynamic)
+                .insert(GravityScale(0.0))
                 .insert(Collider::cuboid(0.05, 0.05, 0.1))
-                .insert(RigidBody::Fixed)
                 .insert(Sensor)
-                .insert(ActiveEvents::COLLISION_EVENTS)
                 .insert(TransformBundle::from(Transform::from_translation(
                     death.position,
                 )))
+                .insert(Velocity {
+                    linvel: Vec3::new(0.0, 0.0, 3.0),
+                    angvel: Vec3::new(1.70, 1.5, 0.0),
+                })
                 .with_children(|children| {
                     children.spawn(PbrBundle {
                         mesh: meshes.add(Mesh::from(shape::Capsule {
@@ -92,18 +106,26 @@ fn spawn_powerups(
     }
 }
 
-// TODO: Refactor s.t. the bullets use the same component that controls movement (e.g. VerticalMovementComponent)
-fn update_powerup_positions(
-    mut powerups: Query<&mut Transform, (With<Collider>, With<PowerupComponent>)>,
-    time: Res<Time>,
+// Sees if the player collides with a powerup
+fn detect_powerup_collisions(
+    mut commands: Commands,
+    rapier_context: Res<RapierContext>,
+    mut player_query: Query<(Entity, &mut Player, Option<&PowerupComponent>)>,
+    mut powerups: Query<(Entity, &mut PowerupComponent), (With<Collider>, Without<Player>)>,
 ) {
-    let delta_time = time.delta_seconds();
-    for mut transform in powerups.iter_mut() {
-        transform.translation.z += 1.1 * delta_time;
-        transform.rotate_y(1.5 * time.delta_seconds());
-        transform.rotate_x(1.75 * time.delta_seconds());
+    let Ok(player) = player_query.get_single_mut() else {
+        return;
+    };
+
+    for (power_entity, mut powerup) in powerups.iter_mut() {
+        if rapier_context.intersection_pair(power_entity, player.0) == Some(true) {
+            // Replaces the powerup the player already has, but any remaining time transfers
+            if let Some(current_powerup) = player.2 {
+                powerup.time_left += current_powerup.time_left;
+            } else {
+                commands.entity(player.0).insert(powerup.clone());
+            }
+            commands.entity(power_entity).despawn_recursive();
+        }
     }
 }
-
-// Sees if the player collides with a powerup
-fn detect_powerup_collisions(mut commands: Commands) {}

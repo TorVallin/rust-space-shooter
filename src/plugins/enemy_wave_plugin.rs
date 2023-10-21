@@ -1,11 +1,10 @@
 use bevy::{
     prelude::{
-        AssetServer, BuildChildren, Commands, Plugin, Quat, Res, SpatialBundle, Startup, Transform,
-        Vec3,
+        AssetServer, BuildChildren, Commands, Plugin, Res, SpatialBundle, Startup, Transform, Vec3,
     },
     scene::SceneBundle,
 };
-use bevy_rapier3d::prelude::{ActiveEvents, Collider, GravityScale, RigidBody, Sensor};
+use bevy_rapier3d::prelude::{ActiveEvents, Collider, GravityScale, RigidBody};
 
 use crate::{combat::Damageable, enemy::Enemy};
 
