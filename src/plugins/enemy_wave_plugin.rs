@@ -21,6 +21,7 @@ pub struct Wave {
 
 #[derive(Resource)]
 pub struct EnemyAIState {
+    pub current_wave: u32,
     pub move_timer: f32,
     pub moving_left: bool,
 }
@@ -41,7 +42,7 @@ enum EnemyType {
 impl Plugin for EnemyWavePlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.add_systems(Startup, init_enemy_waves)
-            .add_systems(Update, update_enemies);
+            .add_systems(Update, (update_enemies, change_wave));
     }
 }
 
@@ -91,30 +92,66 @@ fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetSer
 
 // TODO: Specify this in e.g. a JSON file later?
 fn get_waves() -> Vec<Wave> {
-    let waves: Vec<Wave> = vec![Wave {
-        enemies: vec![
-            EnemyInstance {
-                position: [-1, -1],
-                ship_type: EnemyType::Type1,
-                health: 2,
-            },
-            EnemyInstance {
-                position: [-1, -2],
-                ship_type: EnemyType::Type1,
-                health: 2,
-            },
-            EnemyInstance {
-                position: [1, -1],
-                ship_type: EnemyType::Type1,
-                health: 2,
-            },
-            EnemyInstance {
-                position: [1, -2],
-                ship_type: EnemyType::Type1,
-                health: 2,
-            },
-        ],
-    }];
+    let waves: Vec<Wave> = vec![
+        Wave {
+            enemies: vec![
+                EnemyInstance {
+                    position: [-1, -1],
+                    ship_type: EnemyType::Type1,
+                    health: 2,
+                },
+                EnemyInstance {
+                    position: [-1, -2],
+                    ship_type: EnemyType::Type1,
+                    health: 2,
+                },
+                EnemyInstance {
+                    position: [1, -1],
+                    ship_type: EnemyType::Type1,
+                    health: 2,
+                },
+                EnemyInstance {
+                    position: [1, -2],
+                    ship_type: EnemyType::Type1,
+                    health: 2,
+                },
+            ],
+        },
+        Wave {
+            enemies: vec![
+                EnemyInstance {
+                    position: [-1, -1],
+                    ship_type: EnemyType::Type1,
+                    health: 2,
+                },
+                EnemyInstance {
+                    position: [-1, -2],
+                    ship_type: EnemyType::Type1,
+                    health: 2,
+                },
+                EnemyInstance {
+                    position: [1, -1],
+                    ship_type: EnemyType::Type1,
+                    health: 2,
+                },
+                EnemyInstance {
+                    position: [1, -2],
+                    ship_type: EnemyType::Type1,
+                    health: 2,
+                },
+                EnemyInstance {
+                    position: [2, -1],
+                    ship_type: EnemyType::Type1,
+                    health: 2,
+                },
+                EnemyInstance {
+                    position: [2, -2],
+                    ship_type: EnemyType::Type1,
+                    health: 2,
+                },
+            ],
+        },
+    ];
 
     waves
 }
@@ -140,6 +177,26 @@ fn update_enemies(
     }
 }
 
+fn change_wave(
+    commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut ai_state: ResMut<EnemyAIState>,
+    enemies: Query<With<Enemy>>,
+) {
+    if !enemies.is_empty() {
+        return;
+    }
+
+    let waves = get_waves();
+    ai_state.current_wave += 1;
+    if ai_state.current_wave >= waves.len() as u32 {
+        println!("Done with all waves!");
+        return;
+    }
+
+    spawn_wave(ai_state.current_wave as usize, commands, asset_server);
+}
+
 impl EnemyType {
     fn get_ship_path(&self) -> String {
         match self {
@@ -153,6 +210,7 @@ impl EnemyType {
 impl Default for EnemyAIState {
     fn default() -> Self {
         Self {
+            current_wave: 0,
             move_timer: ENEMY_MOVE_DURATION_S / 2.0,
             moving_left: true,
         }
