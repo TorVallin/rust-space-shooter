@@ -1,4 +1,4 @@
-use bevy::prelude::{Component, Vec3};
+use bevy::prelude::{Component, Vec3, EventReader};
 
 #[derive(Component)]
 pub struct DeathEffect {

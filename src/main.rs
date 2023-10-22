@@ -1,3 +1,4 @@
+mod camera;
 mod combat;
 mod enemy;
 mod plugins;
@@ -9,9 +10,9 @@ use bevy::{
     core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     prelude::{
         shape, App, AssetServer, Assets, BuildChildren, Camera, Camera3dBundle, Color, Commands,
-        Component, DespawnRecursiveExt, Entity, Input, KeyCode, Mesh, Name, PbrBundle, PluginGroup,
-        PointLight, PointLightBundle, Quat, Query, Res, ResMut, Resource, SpatialBundle,
-        StandardMaterial, Startup, Transform, Update, Vec2, Vec3, Vec4, With,
+        Component, DespawnRecursiveExt, Entity, EventWriter, Input, KeyCode, Mesh, Name, PbrBundle,
+        PluginGroup, PointLight, PointLightBundle, Quat, Query, Res, ResMut, Resource,
+        SpatialBundle, StandardMaterial, Startup, Transform, Update, Vec2, Vec3, Vec4, With,
     },
     render::{
         settings::{WgpuFeatures, WgpuSettings},
@@ -36,6 +37,7 @@ use bevy_rapier3d::{
     },
     render::RapierDebugRenderPlugin,
 };
+use camera::{on_hit_camera_shake, CameraShakeEvent, CameraState};
 use combat::{Bullet, Damageable, DeathEffect};
 use plugins::{
     enemy_wave_plugin::EnemyAIState,
@@ -72,13 +74,15 @@ fn main() {
             standard: Vec2::new(600.0, 1000.0),
         })
         .insert_resource(EnemyAIState::default())
+        .insert_resource(CameraState::default())
+        .init_resource::<GameState>()
+        .add_event::<CameraShakeEvent>()
         .add_plugins(DefaultPlugins.set(RenderPlugin { wgpu_settings }))
         .add_plugins(HanabiPlugin)
         .add_plugins(bevy_obj::ObjPlugin)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
         .add_plugins((EnemyWavePlugin, PowerupPlugin))
-        .init_resource::<GameState>()
         .add_systems(Startup, set_resolution)
         .add_systems(
             Startup,
@@ -87,6 +91,7 @@ fn main() {
         .add_systems(Update, (player_controls, bullet_controls))
         .add_systems(Update, check_bullet_damage)
         .add_systems(Update, create_explosion_particle_system)
+        .add_systems(Update, on_hit_camera_shake)
         .run();
 }
 
@@ -96,7 +101,7 @@ fn set_resolution(mut windows: Query<&mut Window>, resolution: Res<ResolutionSet
     window.resolution.set(resolution.x, resolution.y);
 }
 
-fn setup_cameras(mut commands: Commands, _: ResMut<GameState>) {
+fn setup_cameras(mut commands: Commands, _: ResMut<GameState>, camera_state: Res<CameraState>) {
     commands.spawn((
         Camera3dBundle {
             camera: Camera {
@@ -104,7 +109,7 @@ fn setup_cameras(mut commands: Commands, _: ResMut<GameState>) {
                 ..Default::default()
             },
             tonemapping: Tonemapping::TonyMcMapface,
-            transform: Transform::from_xyz(0.0, 20.0, 2.0)
+            transform: Transform::from_translation(camera_state.original_position)
                 .looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
             ..Default::default()
         },
@@ -283,6 +288,7 @@ fn player_controls(
 fn check_bullet_damage(
     mut commands: Commands,
     rapier_context: Res<RapierContext>,
+    mut ev: EventWriter<CameraShakeEvent>,
     mut damageables: Query<
         (Entity, &mut Damageable, &Transform),
         (With<Collider>, With<Damageable>),
@@ -298,6 +304,7 @@ fn check_bullet_damage(
             // Checks for intersections between Damageable things and the bullets
             if rapier_context.intersection_pair(damageable_entity, bullet_entity) == Some(true) {
                 damageable.health -= bullet.damage;
+                let mut intensity = 0.5;
 
                 // Prevent the player from damaging itself & enemies from damaging eachother
                 if damageable.is_player != bullet.is_player_bullet {
@@ -310,8 +317,11 @@ fn check_bullet_damage(
                             position: position.translation,
                             is_player: damageable.is_player,
                         });
+                        intensity = 1.0;
                     }
                 }
+
+                ev.send(CameraShakeEvent { intensity });
             }
         }
     }
