@@ -37,7 +37,10 @@ use bevy_rapier3d::{
     render::RapierDebugRenderPlugin,
 };
 use combat::{Bullet, Damageable, DeathEffect};
-use plugins::powerups::{Powerup, PowerupComponent, PowerupPlugin};
+use plugins::{
+    enemy_wave_plugin::EnemyAIState,
+    powerups::{Powerup, PowerupComponent, PowerupPlugin},
+};
 
 #[derive(Component, Default)]
 struct Player {
@@ -68,6 +71,7 @@ fn main() {
         .insert_resource(ResolutionSettings {
             standard: Vec2::new(600.0, 1000.0),
         })
+        .insert_resource(EnemyAIState::default())
         .add_plugins(DefaultPlugins.set(RenderPlugin { wgpu_settings }))
         .add_plugins(HanabiPlugin)
         .add_plugins(bevy_obj::ObjPlugin)
