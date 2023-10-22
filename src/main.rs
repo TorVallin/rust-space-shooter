@@ -24,10 +24,9 @@ use bevy::{
     DefaultPlugins,
 };
 use bevy_hanabi::{
-    Attribute, ColorOverLifetimeModifier, CompiledParticleEffect, EffectAsset,
-    EffectSpawner, ExprWriter, Gradient, HanabiPlugin, LinearDragModifier,
-    ParticleEffectBundle, ScalarType, SetAttributeModifier, SetPositionSphereModifier,
-    SetVelocitySphereModifier, ShapeDimension,
+    Attribute, ColorOverLifetimeModifier, CompiledParticleEffect, EffectAsset, EffectSpawner,
+    ExprWriter, Gradient, HanabiPlugin, LinearDragModifier, ParticleEffectBundle, ScalarType,
+    SetAttributeModifier, SetPositionSphereModifier, SetVelocitySphereModifier, ShapeDimension,
     SizeOverLifetimeModifier, Spawner,
 };
 use bevy_rapier3d::{
@@ -253,18 +252,25 @@ fn player_controls(
 
     if can_shoot && input.pressed(KeyCode::Space) {
         player.1.bullet_cooldown = player.1.bullet_cooldown_timer;
-        spawn_bullet(
-            &mut commands,
-            &mut meshes,
-            &mut materials,
-            translation.add(Vec3::new(0.0, 0.0, -0.5)),
-        );
-        if let Some(_) = player.2 {
+        let mut spawn_positions = Vec::new();
+        spawn_positions.push(Vec3::new(0.0, 0.0, -0.5));
+        if let Some(powerup) = player.2 {
+            match powerup.powerup {
+                Powerup::DoubleShot => {
+                    spawn_positions.push(Vec3::new(-0.2, 0.0, 0.0));
+                }
+                Powerup::TripleShot => {
+                    spawn_positions.push(Vec3::new(-0.2, 0.0, 0.0));
+                    spawn_positions.push(Vec3::new(0.2, 0.0, 0.0));
+                }
+            }
+        }
+        for pos in spawn_positions {
             spawn_bullet(
                 &mut commands,
                 &mut meshes,
                 &mut materials,
-                translation.add(Vec3::new(-0.2, 0.0, 0.0)),
+                translation.add(pos),
             );
         }
     }

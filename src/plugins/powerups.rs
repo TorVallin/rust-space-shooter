@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+
 use bevy::{
     prelude::{
         shape, Assets, BuildChildren, Color, Commands, Component, DespawnRecursiveExt, Entity,
@@ -12,20 +14,20 @@ use rand::Rng;
 
 use crate::{combat::DeathEffect, Player};
 
-#[derive(Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub enum Powerup {
     DoubleShot,
     TripleShot,
 }
 
-#[derive(Clone)]
+#[derive(PartialEq, Eq, Clone)]
 struct DoubleShot {}
-#[derive(Clone)]
+#[derive(PartialEq, Eq, Clone)]
 struct TripleShot {}
 
 #[derive(Component, Clone)]
 pub struct PowerupComponent {
-    powerup: Powerup,
+    pub powerup: Powerup,
     time_left: f32,
 }
 
@@ -66,7 +68,7 @@ fn spawn_powerups(
         }
 
         let prob = rng.gen::<f64>();
-        if  prob < 0.1 {
+        if prob < 0.1 {
             // Spawn a new powerup
             commands
                 .spawn(SpatialBundle::default())
@@ -110,18 +112,22 @@ fn spawn_powerups(
 fn detect_powerup_collisions(
     mut commands: Commands,
     rapier_context: Res<RapierContext>,
-    mut player_query: Query<(Entity, &mut Player, Option<&PowerupComponent>)>,
+    mut player_query: Query<(Entity, &mut Player, Option<&mut PowerupComponent>)>,
     mut powerups: Query<(Entity, &mut PowerupComponent), (With<Collider>, Without<Player>)>,
 ) {
-    let Ok(player) = player_query.get_single_mut() else {
+    let Ok(mut player) = player_query.get_single_mut() else {
         return;
     };
 
-    for (power_entity, mut powerup) in powerups.iter_mut() {
+    for (power_entity, powerup) in powerups.iter_mut() {
         if rapier_context.intersection_pair(power_entity, player.0) == Some(true) {
-            // Replaces the powerup the player already has, but any remaining time transfers
-            if let Some(current_powerup) = player.2 {
-                powerup.time_left += current_powerup.time_left;
+            // Upgrades to triple-shot if the player already has a double shot
+            if let Some(current_powerup) = player.2.borrow_mut() {
+                if current_powerup.powerup == Powerup::DoubleShot {
+                    current_powerup.powerup = Powerup::TripleShot;
+                    println!("Activating triple shot");
+                }
+                current_powerup.time_left += powerup.time_left;
             } else {
                 commands.entity(player.0).insert(powerup.clone());
             }
