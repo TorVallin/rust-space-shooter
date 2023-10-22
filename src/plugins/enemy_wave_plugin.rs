@@ -11,7 +11,7 @@ use bevy_rapier3d::prelude::{ActiveEvents, Collider, GravityScale, RigidBody, Ve
 use crate::{combat::Damageable, enemy::Enemy};
 
 const ENEMY_MOVE_DURATION_S: f32 = 2.0;
-const ENEMY_MOVE_VELOCITY: f32 = 1.5;
+const ENEMY_MOVE_VELOCITY: f32 = 0.75;
 
 pub struct EnemyWavePlugin;
 
