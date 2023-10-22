@@ -24,10 +24,9 @@ use bevy::{
     DefaultPlugins,
 };
 use bevy_hanabi::{
-    AccelModifier, Attribute, ColorOverLifetimeModifier, CompiledParticleEffect, EffectAsset,
-    EffectSpawner, ExprWriter, Gradient, HanabiPlugin, LinearDragModifier, ParticleEffect,
-    ParticleEffectBundle, ScalarType, SetAttributeModifier, SetPositionSphereModifier,
-    SetSizeModifier, SetVelocityCircleModifier, SetVelocitySphereModifier, ShapeDimension,
+    Attribute, ColorOverLifetimeModifier, CompiledParticleEffect, EffectAsset, EffectSpawner,
+    ExprWriter, Gradient, HanabiPlugin, LinearDragModifier, ParticleEffectBundle, ScalarType,
+    SetAttributeModifier, SetPositionSphereModifier, SetVelocitySphereModifier, ShapeDimension,
     SizeOverLifetimeModifier, Spawner,
 };
 use bevy_rapier3d::{
@@ -37,18 +36,18 @@ use bevy_rapier3d::{
     },
     render::RapierDebugRenderPlugin,
 };
-use combat::{Bullet, Damageable};
+use combat::{Bullet, Damageable, DeathEffect};
+use plugins::{
+    enemy_wave_plugin::EnemyAIState,
+    powerups::{Powerup, PowerupComponent, PowerupPlugin},
+};
 
 #[derive(Component, Default)]
 struct Player {
     lives: u32,
     bullet_cooldown: f32,
     bullet_cooldown_timer: f32,
-}
-
-#[derive(Component)]
-struct DeathEffect {
-    position: Vec3,
+    active_powerup: Option<Powerup>,
 }
 
 #[derive(Resource, Default)]
@@ -72,12 +71,13 @@ fn main() {
         .insert_resource(ResolutionSettings {
             standard: Vec2::new(600.0, 1000.0),
         })
+        .insert_resource(EnemyAIState::default())
         .add_plugins(DefaultPlugins.set(RenderPlugin { wgpu_settings }))
         .add_plugins(HanabiPlugin)
         .add_plugins(bevy_obj::ObjPlugin)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
-        .add_plugins(EnemyWavePlugin)
+        .add_plugins((EnemyWavePlugin, PowerupPlugin))
         .init_resource::<GameState>()
         .add_systems(Startup, set_resolution)
         .add_systems(
@@ -138,6 +138,7 @@ fn setup_game_state(
                 lives: 3,
                 bullet_cooldown: 0.0,
                 bullet_cooldown_timer: 0.25,
+                active_powerup: None,
             })
             .id(),
     );
@@ -206,10 +207,6 @@ fn setup_particle_systems(mut commands: Commands, mut effects: ResMut<Assets<Eff
                 gradient: size_gradient1,
                 screen_space_size: false,
             }),
-        // .render(SetSizeModifier {
-        //     size: Vec2::splat(10.).into(),
-        //     screen_space_size: true,
-        // }),
     );
 
     commands
@@ -223,7 +220,7 @@ fn player_controls(
     mut materials: ResMut<Assets<StandardMaterial>>,
     input: Res<Input<KeyCode>>,
     game: ResMut<GameState>,
-    mut player_query: Query<(&mut Transform, &mut Player)>,
+    mut player_query: Query<(&mut Transform, &mut Player, Option<&PowerupComponent>)>,
     time: Res<Time>,
 ) {
     let player_entity = game.player.unwrap();
@@ -259,38 +256,27 @@ fn player_controls(
 
     if can_shoot && input.pressed(KeyCode::Space) {
         player.1.bullet_cooldown = player.1.bullet_cooldown_timer;
-        commands
-            .spawn(SpatialBundle::default())
-            .insert(Collider::cuboid(0.05, 0.05, 0.1))
-            .insert(RigidBody::Fixed)
-            .insert(Sensor)
-            .insert(Bullet {
-                is_player_bullet: true,
-                up_direction: true,
-                velocity: 7.5,
-                damage: 1,
-            })
-            .insert(ActiveEvents::COLLISION_EVENTS)
-            .insert(TransformBundle::from(Transform::from_translation(
-                translation.add(Vec3::new(0.0, 0.0, -0.5)),
-            )))
-            .with_children(|children| {
-                children.spawn(PbrBundle {
-                    mesh: meshes.add(Mesh::from(shape::Capsule {
-                        radius: 0.05,
-                        depth: 0.10,
-                        ..Default::default()
-                    })),
-                    transform: Transform::from_rotation(Quat::from_rotation_x(
-                        -90.0f32.to_radians(),
-                    )),
-                    material: materials.add(StandardMaterial {
-                        emissive: Color::rgb_linear(35.0, 1.0, 2.0),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                });
-            });
+        let mut spawn_positions = Vec::new();
+        spawn_positions.push(Vec3::new(0.0, 0.0, -0.5));
+        if let Some(powerup) = player.2 {
+            match powerup.powerup {
+                Powerup::DoubleShot => {
+                    spawn_positions.push(Vec3::new(-0.2, 0.0, 0.0));
+                }
+                Powerup::TripleShot => {
+                    spawn_positions.push(Vec3::new(-0.2, 0.0, 0.0));
+                    spawn_positions.push(Vec3::new(0.2, 0.0, 0.0));
+                }
+            }
+        }
+        for pos in spawn_positions {
+            spawn_bullet(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                translation.add(pos),
+            );
+        }
     }
 }
 
@@ -309,10 +295,11 @@ fn check_bullet_damage(
         for (bullet_entity, bullet) in &bullets {
             // Check what the bullets are hitting
 
-            // Checks for intersections between the player and the enemy bullet
+            // Checks for intersections between Damageable things and the bullets
             if rapier_context.intersection_pair(damageable_entity, bullet_entity) == Some(true) {
                 damageable.health -= bullet.damage;
 
+                // Prevent the player from damaging itself & enemies from damaging eachother
                 if damageable.is_player != bullet.is_player_bullet {
                     commands.entity(bullet_entity).despawn_recursive();
                     if damageable.health <= 0 {
@@ -321,6 +308,7 @@ fn check_bullet_damage(
                         // Spawn a particle system as a death effect
                         commands.spawn(DeathEffect {
                             position: position.translation,
+                            is_player: damageable.is_player,
                         });
                     }
                 }
@@ -331,8 +319,7 @@ fn check_bullet_damage(
 
 fn bullet_controls(
     _: ResMut<GameState>,
-    mut bullets: Query<(&mut Transform, &Bullet), (With<Collider>, With<Bullet>)>,
-
+    mut bullets: Query<(&mut Transform, &Bullet), With<Collider>>,
     time: Res<Time>,
 ) {
     let delta_time = time.delta_seconds();
@@ -351,7 +338,7 @@ fn create_explosion_particle_system(
     )>,
     particle_effects: Query<(Entity, &DeathEffect)>,
 ) {
-    let Ok((mut effect, mut spawner, mut effect_transform)) = effect.get_single_mut() else {
+    let Ok((_, mut spawner, mut effect_transform)) = effect.get_single_mut() else {
         return;
     };
 
@@ -361,4 +348,41 @@ fn create_explosion_particle_system(
         spawner.reset();
         commands.entity(entity).despawn();
     }
+}
+
+fn spawn_bullet(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    translation: Vec3,
+) {
+    commands
+        .spawn(SpatialBundle::default())
+        .insert(Collider::cuboid(0.05, 0.05, 0.1))
+        .insert(Sensor)
+        .insert(Bullet {
+            is_player_bullet: true,
+            up_direction: true,
+            velocity: 7.5,
+            damage: 1,
+        })
+        .insert(ActiveEvents::COLLISION_EVENTS)
+        .insert(TransformBundle::from(Transform::from_translation(
+            translation,
+        )))
+        .with_children(|children| {
+            children.spawn(PbrBundle {
+                mesh: meshes.add(Mesh::from(shape::Capsule {
+                    radius: 0.05,
+                    depth: 0.10,
+                    ..Default::default()
+                })),
+                transform: Transform::from_rotation(Quat::from_rotation_x(-90.0f32.to_radians())),
+                material: materials.add(StandardMaterial {
+                    emissive: Color::rgb_linear(35.0, 1.0, 2.0),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+        });
 }
