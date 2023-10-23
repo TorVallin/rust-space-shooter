@@ -1,6 +1,7 @@
 mod camera;
 mod combat;
 mod enemy;
+mod particles;
 mod plugins;
 
 use std::ops::Add;
@@ -13,6 +14,7 @@ use bevy::{
         Component, DespawnRecursiveExt, Entity, EventWriter, Input, KeyCode, Mesh, Name, PbrBundle,
         PluginGroup, PointLight, PointLightBundle, Quat, Query, Res, ResMut, Resource,
         SpatialBundle, StandardMaterial, Startup, Transform, Update, Vec2, Vec3, Vec4, With,
+        Without,
     },
     render::{
         settings::{WgpuFeatures, WgpuSettings},
@@ -24,12 +26,7 @@ use bevy::{
     window::Window,
     DefaultPlugins,
 };
-use bevy_hanabi::{
-    Attribute, ColorOverLifetimeModifier, CompiledParticleEffect, EffectAsset, EffectSpawner,
-    ExprWriter, Gradient, HanabiPlugin, LinearDragModifier, ParticleEffectBundle, ScalarType,
-    SetAttributeModifier, SetPositionSphereModifier, SetVelocitySphereModifier, ShapeDimension,
-    SizeOverLifetimeModifier, Spawner,
-};
+use bevy_hanabi::{CompiledParticleEffect, EffectAsset, EffectSpawner, HanabiPlugin};
 use bevy_rapier3d::{
     prelude::{
         ActiveEvents, Collider, GravityScale, NoUserData, RapierContext, RapierPhysicsPlugin,
@@ -38,7 +35,8 @@ use bevy_rapier3d::{
     render::RapierDebugRenderPlugin,
 };
 use camera::{on_hit_camera_shake, CameraShakeEvent, CameraState};
-use combat::{Bullet, Damageable, DeathEffect};
+use combat::{Bullet, Damageable, EntityDeath, LargeHitEffect, ParticleHitEffect, SmallHitEffect};
+use particles::create_effect;
 use plugins::{
     enemy_wave_plugin::EnemyAIState,
     powerups::{Powerup, PowerupComponent, PowerupPlugin},
@@ -163,60 +161,8 @@ fn setup_game_state(
 }
 
 fn setup_particle_systems(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {
-    let spawner = Spawner::once(1000.0.into(), false);
-
-    let writer = ExprWriter::new();
-
-    let age = writer.lit(0.).uniform(writer.lit(0.2)).expr();
-    let init_age = SetAttributeModifier::new(Attribute::AGE, age);
-    let lifetime = writer.lit(0.25).expr();
-    let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, lifetime);
-
-    let drag = writer.lit(2.).expr();
-    let update_drag = LinearDragModifier::new(drag);
-
-    let mut color_gradient1 = Gradient::new();
-    color_gradient1.add_key(0.0, Vec4::new(4.0, 4.0, 4.0, 1.0));
-    color_gradient1.add_key(0.1, Vec4::new(4.0, 4.0, 0.0, 1.0));
-    color_gradient1.add_key(0.9, Vec4::new(4.0, 0.0, 0.0, 1.0));
-    color_gradient1.add_key(1.0, Vec4::new(4.0, 0.0, 0.0, 0.0));
-
-    let mut size_gradient1 = Gradient::new();
-    size_gradient1.add_key(0.0, Vec2::splat(0.1));
-    size_gradient1.add_key(0.3, Vec2::splat(0.1));
-    size_gradient1.add_key(1.0, Vec2::splat(0.0));
-
-    let init_pos = SetPositionSphereModifier {
-        center: writer.lit(Vec3::ZERO).expr(),
-        radius: writer.lit(0.5).expr(),
-        dimension: ShapeDimension::Volume,
-    };
-
-    let init_vel = SetVelocitySphereModifier {
-        center: writer.lit(Vec3::ZERO).expr(),
-        speed: (writer.rand(ScalarType::Float) * writer.lit(5.0) + writer.lit(10.0)).expr(),
-    };
-
-    let effect = effects.add(
-        EffectAsset::new(32768, spawner, writer.finish())
-            .with_name("death_effect")
-            .init(init_pos)
-            .init(init_vel)
-            .init(init_age)
-            .init(init_lifetime)
-            .update(update_drag)
-            .render(ColorOverLifetimeModifier {
-                gradient: color_gradient1,
-            })
-            .render(SizeOverLifetimeModifier {
-                gradient: size_gradient1,
-                screen_space_size: false,
-            }),
-    );
-
-    commands
-        .spawn(ParticleEffectBundle::new(effect).with_spawner(spawner))
-        .insert(Name::new("effect"));
+    create_effect("death_effect", 1000., true, &mut effects, &mut commands);
+    create_effect("hit_effect", 50., false, &mut effects, &mut commands);
 }
 
 fn player_controls(
@@ -305,6 +251,7 @@ fn check_bullet_damage(
             if rapier_context.intersection_pair(damageable_entity, bullet_entity) == Some(true) {
                 damageable.health -= bullet.damage;
                 let mut intensity = 0.5;
+                let mut entity_died = false;
 
                 // Prevent the player from damaging itself & enemies from damaging eachother
                 if damageable.is_player != bullet.is_player_bullet {
@@ -313,15 +260,22 @@ fn check_bullet_damage(
                         commands.entity(damageable_entity).despawn_recursive();
 
                         // Spawn a particle system as a death effect
-                        commands.spawn(DeathEffect {
+                        commands.spawn(EntityDeath {
                             position: position.translation,
                             is_player: damageable.is_player,
                         });
+
                         intensity = 1.0;
+                        entity_died = true;
                     }
                 }
 
                 ev.send(CameraShakeEvent { intensity });
+                println!("Spawning particle hit effect");
+                commands.spawn(ParticleHitEffect {
+                    position: position.translation,
+                    is_large: entity_died,
+                });
             }
         }
     }
@@ -341,21 +295,41 @@ fn bullet_controls(
 
 fn create_explosion_particle_system(
     mut commands: Commands,
-    mut effect: Query<(
-        &mut CompiledParticleEffect,
-        &mut EffectSpawner,
-        &mut Transform,
-    )>,
-    particle_effects: Query<(Entity, &DeathEffect)>,
+    mut small_effect: Query<
+        (
+            &mut CompiledParticleEffect,
+            &mut EffectSpawner,
+            &mut Transform,
+        ),
+        (With<SmallHitEffect>, Without<LargeHitEffect>),
+    >,
+    mut large_effect: Query<
+        (
+            &mut CompiledParticleEffect,
+            &mut EffectSpawner,
+            &mut Transform,
+        ),
+        (With<LargeHitEffect>, Without<SmallHitEffect>),
+    >,
+    particle_effects: Query<(Entity, &ParticleHitEffect)>,
 ) {
-    let Ok((_, mut spawner, mut effect_transform)) = effect.get_single_mut() else {
+    // TODO: Refactor this, ideally we should just be able to change the rate of the spawner
+    // so that we have a single spawner. That way, we can avoid tagging with SmallHitEffect and LargeHitEffect.
+    let Ok((_, mut small_spawner, mut small_transform)) = small_effect.get_single_mut() else {
+        return;
+    };
+    let Ok((_, mut large_spawner, mut large_transform)) = large_effect.get_single_mut() else {
         return;
     };
 
     for (entity, particle_effect) in particle_effects.iter() {
-        effect_transform.translation = particle_effect.position;
-
-        spawner.reset();
+        if particle_effect.is_large {
+            large_transform.translation = particle_effect.position;
+            large_spawner.reset();
+        } else {
+            small_transform.translation = particle_effect.position;
+            small_spawner.reset();
+        }
         commands.entity(entity).despawn();
     }
 }

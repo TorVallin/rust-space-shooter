@@ -12,7 +12,7 @@ use bevy::{
 use bevy_rapier3d::prelude::{Collider, GravityScale, RapierContext, RigidBody, Sensor, Velocity};
 use rand::Rng;
 
-use crate::{combat::DeathEffect, Player};
+use crate::{combat::EntityDeath, Player};
 
 #[derive(PartialEq, Eq, Clone)]
 pub enum Powerup {
@@ -59,10 +59,10 @@ fn spawn_powerups(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    deaths: Query<&DeathEffect>,
+    deaths: Query<(Entity, &EntityDeath)>,
 ) {
     let mut rng = rand::thread_rng();
-    for death in deaths.iter() {
+    for (death_entity, death) in deaths.iter() {
         if death.is_player {
             continue;
         }
@@ -105,6 +105,7 @@ fn spawn_powerups(
                     });
                 });
         }
+        commands.entity(death_entity).despawn_recursive();
     }
 }
 

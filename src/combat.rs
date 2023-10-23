@@ -1,10 +1,22 @@
-use bevy::prelude::{Component, Vec3, EventReader};
+use bevy::prelude::{Component, Vec3};
 
 #[derive(Component)]
-pub struct DeathEffect {
+pub struct EntityDeath {
     pub position: Vec3,  // Where the death occured
-    pub is_player: bool, // If it was the player (true) or an enemy that died
+    pub is_player: bool, // If it was the player (true) or an enemy that died (false)
 }
+
+#[derive(Component)]
+pub struct ParticleHitEffect {
+    pub position: Vec3, // Where the hit occured
+    pub is_large: bool,
+}
+
+#[derive(Component)]
+pub struct SmallHitEffect {}
+
+#[derive(Component)]
+pub struct LargeHitEffect {}
 
 #[derive(Component)]
 pub struct Damageable {
