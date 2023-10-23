@@ -1,12 +1,16 @@
+use std::ops::{Mul, Sub};
+
 use bevy::{
+    ecs::system::Command,
     prelude::{
-        AssetServer, BuildChildren, Commands, Entity, Plugin, Query, Res, ResMut, Resource,
-        SpatialBundle, Startup, Transform, Update, Vec3, With,
+        AssetServer, BuildChildren, Commands, Component, Entity, Plugin, Query, Res, ResMut,
+        Resource, SpatialBundle, Startup, Transform, Update, Vec3, With, Without,
     },
     scene::SceneBundle,
     time::Time,
 };
-use bevy_rapier3d::prelude::{ActiveEvents, Collider, GravityScale, RigidBody, Velocity};
+use bevy_rapier3d::prelude::{ActiveEvents, Collider, GravityScale, RigidBody, Sensor, Velocity};
+use rand::Rng;
 
 use crate::{combat::Damageable, enemy::Enemy};
 
@@ -33,6 +37,11 @@ struct EnemyInstance {
     health: u32,
 }
 
+#[derive(Component)]
+struct MoveToTarget {
+    target: Vec3,
+}
+
 enum EnemyType {
     Type1,
     Type2,
@@ -42,7 +51,7 @@ enum EnemyType {
 impl Plugin for EnemyWavePlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.add_systems(Startup, init_enemy_waves)
-            .add_systems(Update, (update_enemies, change_wave));
+            .add_systems(Update, (update_enemies, update_move_to_target, change_wave));
     }
 }
 
@@ -57,15 +66,17 @@ fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetSer
     let x_spacing = 0.5;
     let z_spacing = 1.0;
 
+    let mut rng = rand::thread_rng();
+
     for enemy in wave.enemies.iter() {
         commands
             .spawn(Enemy {})
             .insert(Velocity::default())
             .insert(SpatialBundle {
                 transform: Transform::from_translation(Vec3::new(
-                    enemy.position[0] as f32 * x_spacing,
+                    enemy.position[0] as f32 * x_spacing + rng.gen_range(-7.0..7.0),
                     0.0,
-                    enemy.position[1] as f32 * z_spacing,
+                    enemy.position[1] as f32 * z_spacing + rng.gen_range(-7.0..-1.0),
                 )),
                 ..Default::default()
             })
@@ -73,7 +84,15 @@ fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetSer
                 health: enemy.health,
                 is_player: false,
             })
+            .insert(MoveToTarget {
+                target: Vec3::new(
+                    enemy.position[0] as f32 * x_spacing,
+                    0.,
+                    enemy.position[1] as f32 * z_spacing,
+                ),
+            })
             .insert(RigidBody::Dynamic)
+            .insert(Sensor {})
             .insert(GravityScale(0.0))
             .insert(Collider::cylinder(0.25, 0.3))
             .insert(ActiveEvents::COLLISION_EVENTS)
@@ -140,12 +159,12 @@ fn get_waves() -> Vec<Wave> {
                     health: 2,
                 },
                 EnemyInstance {
-                    position: [2, -1],
+                    position: [3, -1],
                     ship_type: EnemyType::Type1,
                     health: 2,
                 },
                 EnemyInstance {
-                    position: [2, -2],
+                    position: [3, -2],
                     ship_type: EnemyType::Type1,
                     health: 2,
                 },
@@ -159,8 +178,14 @@ fn get_waves() -> Vec<Wave> {
 fn update_enemies(
     mut ai_state: ResMut<EnemyAIState>,
     time: Res<Time>,
-    mut enemies: Query<&mut Velocity, With<Enemy>>,
+    mut enemies: Query<&mut Velocity, (With<Enemy>, Without<MoveToTarget>)>,
+    move_to_target: Query<Entity, With<MoveToTarget>>,
 ) {
+    // Ensure all (non-dead) enemies have finished moving to the target position before
+    // initiating left/right movement
+    if !move_to_target.is_empty() {
+        return;
+    }
     ai_state.move_timer -= time.delta_seconds();
     if ai_state.move_timer <= 0.0 {
         // Swap direction
@@ -174,6 +199,26 @@ fn update_enemies(
         } else {
             ENEMY_MOVE_VELOCITY
         };
+    }
+}
+
+fn update_move_to_target(
+    mut commands: Commands,
+    mut enemies: Query<(Entity, &MoveToTarget, &mut Velocity, &mut Transform), With<Enemy>>,
+) {
+    for (enemy_entity, target, mut enemy_vel, mut transform) in enemies.iter_mut() {
+        if target.target.distance(transform.translation) > 0.10 {
+            let new_direction = target
+                .target
+                .sub(transform.translation)
+                .normalize()
+                .mul(ENEMY_MOVE_VELOCITY * 10.);
+            enemy_vel.linvel = new_direction;
+        } else {
+            enemy_vel.linvel = Vec3::ZERO;
+            transform.translation = target.target;
+            commands.entity(enemy_entity).remove::<MoveToTarget>();
+        }
     }
 }
 
