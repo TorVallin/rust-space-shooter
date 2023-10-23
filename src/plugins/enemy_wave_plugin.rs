@@ -3,11 +3,14 @@ use std::ops::{Mul, Sub};
 use bevy::{
     ecs::system::Command,
     prelude::{
-        AssetServer, BuildChildren, Commands, Component, Entity, Plugin, Query, Res, ResMut,
-        Resource, SpatialBundle, Startup, Transform, Update, Vec3, With, Without,
+        default, AssetServer, BuildChildren, Color, Commands, Component, Entity, Event,
+        EventReader, EventWriter, Label, NodeBundle, Plugin, Query, Res, ResMut, Resource,
+        SpatialBundle, Startup, TextBundle, Transform, Update, Vec3, With, Without,
     },
     scene::SceneBundle,
+    text::{Text, TextStyle},
     time::Time,
+    ui::{Style, UiRect, Val},
 };
 use bevy_rapier3d::prelude::{ActiveEvents, Collider, GravityScale, RigidBody, Sensor, Velocity};
 use rand::Rng;
@@ -21,6 +24,11 @@ pub struct EnemyWavePlugin;
 
 pub struct Wave {
     enemies: Vec<EnemyInstance>,
+}
+
+#[derive(Event)]
+pub struct NewWaveEvent {
+    wave: u32,
 }
 
 #[derive(Resource)]
@@ -42,6 +50,9 @@ struct MoveToTarget {
     target: Vec3,
 }
 
+#[derive(Component)]
+struct WaveUI {}
+
 enum EnemyType {
     Type1,
     Type2,
@@ -50,13 +61,56 @@ enum EnemyType {
 
 impl Plugin for EnemyWavePlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
-        app.add_systems(Startup, init_enemy_waves)
-            .add_systems(Update, (update_enemies, update_move_to_target, change_wave));
+        app.add_event::<NewWaveEvent>()
+            .add_systems(Startup, (init_enemy_waves, init_ui))
+            .add_systems(
+                Update,
+                (
+                    update_enemies,
+                    update_move_to_target,
+                    change_wave,
+                    update_ui,
+                ),
+            );
     }
 }
 
-fn init_enemy_waves(commands: Commands, asset_server: Res<AssetServer>) {
+fn init_enemy_waves(
+    commands: Commands,
+    mut ev: EventWriter<NewWaveEvent>,
+    asset_server: Res<AssetServer>,
+    ai_state: Res<EnemyAIState>,
+) {
+    ev.send(NewWaveEvent {
+        wave: ai_state.current_wave,
+    });
     spawn_wave(0, commands, asset_server);
+}
+
+fn init_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands
+        .spawn(NodeBundle {
+            style: Style { ..default() },
+            ..default()
+        })
+        .with_children(|parent| {
+            parent
+                .spawn(
+                    TextBundle::from_section(
+                        "Wave: ",
+                        TextStyle {
+                            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                            font_size: 45.0,
+                            color: Color::WHITE,
+                        },
+                    )
+                    .with_style(Style {
+                        margin: UiRect::all(Val::Px(10.)),
+                        ..default()
+                    }),
+                )
+                .insert(WaveUI {});
+        });
 }
 
 fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -224,6 +278,7 @@ fn update_move_to_target(
 
 fn change_wave(
     commands: Commands,
+    mut ev: EventWriter<NewWaveEvent>,
     asset_server: Res<AssetServer>,
     mut ai_state: ResMut<EnemyAIState>,
     enemies: Query<With<Enemy>>,
@@ -234,12 +289,37 @@ fn change_wave(
 
     let waves = get_waves();
     ai_state.current_wave += 1;
+    ev.send(NewWaveEvent {
+        wave: ai_state.current_wave,
+    });
     if ai_state.current_wave >= waves.len() as u32 {
         println!("Done with all waves!");
         return;
     }
 
     spawn_wave(ai_state.current_wave as usize, commands, asset_server);
+}
+
+fn update_ui(
+    mut er: EventReader<NewWaveEvent>,
+    asset_server: Res<AssetServer>,
+    mut ui: Query<&mut Text, With<WaveUI>>,
+) {
+    for event in er.iter() {
+        println!("Got new event!!");
+        for mut text in ui.iter_mut() {
+            let t = format!("Wave: {}", event.wave);
+            println!("{}", t);
+            *text = Text::from_section(
+                format!("Wave: {}", event.wave),
+                TextStyle {
+                    font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                    font_size: 45.0,
+                    color: Color::WHITE,
+                },
+            );
+        }
+    }
 }
 
 impl EnemyType {
