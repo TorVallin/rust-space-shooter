@@ -13,9 +13,9 @@ use bevy::{
     prelude::{
         in_state, shape, App, AssetServer, Assets, BuildChildren, Camera, Camera3dBundle, Color,
         Commands, Component, DespawnRecursiveExt, Entity, EventWriter, Input, IntoSystemConfigs,
-        KeyCode, Mesh, PbrBundle, PluginGroup, PointLight, PointLightBundle, Quat, Query, Res,
-        ResMut, Resource, SpatialBundle, StandardMaterial, Startup, Transform, Update, Vec2, Vec3,
-        With, Without,
+        KeyCode, Mesh, OnEnter, PbrBundle, PluginGroup, PointLight, PointLightBundle, Quat, Query,
+        Res, ResMut, Resource, SpatialBundle, StandardMaterial, Startup, Transform, Update, Vec2,
+        Vec3, With, Without,
     },
     render::{
         settings::{WgpuFeatures, WgpuSettings},
@@ -40,6 +40,7 @@ use combat::{Bullet, Damageable, EntityDeath, LargeHitEffect, ParticleHitEffect,
 use particles::create_effect;
 use plugins::{
     enemy_wave_plugin::EnemyAIState,
+    main_menu::MainMenuPlugin,
     powerups::{Powerup, PowerupComponent, PowerupPlugin},
 };
 use state::GameState;
@@ -75,7 +76,7 @@ fn main() {
         .add_plugins(bevy_obj::ObjPlugin)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
-        .add_plugins((EnemyWavePlugin, PowerupPlugin))
+        .add_plugins((MainMenuPlugin, EnemyWavePlugin, PowerupPlugin))
         .add_state::<GameState>()
         .init_resource::<GameResources>()
         .insert_resource(ResolutionSettings {
@@ -86,12 +87,11 @@ fn main() {
         .add_event::<CameraShakeEvent>()
         .add_systems(
             Startup,
-            (
-                set_resolution,
-                setup_cameras,
-                setup_game_state,
-                setup_particle_systems,
-            ),
+            (set_resolution, setup_cameras, setup_particle_systems),
+        )
+        .add_systems(
+            OnEnter(GameState::Game), // run if in game state
+            setup_game_state,
         )
         .add_systems(
             Update,
@@ -188,6 +188,9 @@ fn player_controls(
     mut player_query: Query<(&mut Transform, &mut Player, Option<&PowerupComponent>)>,
     time: Res<Time>,
 ) {
+    if game.player.is_none() {
+        return;
+    }
     let player_entity = game.player.unwrap();
 
     let mut player = player_query.get_mut(player_entity).unwrap();
@@ -263,7 +266,7 @@ fn check_bullet_damage(
 
             // Checks for intersections between Damageable things and the bullets
             if rapier_context.intersection_pair(damageable_entity, bullet_entity) == Some(true) {
-                damageable.health -= bullet.damage;
+                damageable.health = damageable.health.checked_sub(bullet.damage).unwrap_or(0);
                 let mut intensity = 0.5;
                 let mut entity_died = false;
 
@@ -285,7 +288,6 @@ fn check_bullet_damage(
                 }
 
                 ev.send(CameraShakeEvent { intensity });
-                println!("Spawning particle hit effect");
                 commands.spawn(ParticleHitEffect {
                     position: position.translation,
                     is_large: entity_died,
