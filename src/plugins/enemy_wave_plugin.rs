@@ -3,8 +3,9 @@ use std::ops::{Mul, Sub};
 use bevy::{
     prelude::{
         default, in_state, AssetServer, BuildChildren, Color, Commands, Component, Entity, Event,
-        EventReader, EventWriter, IntoSystemConfigs, NodeBundle, Plugin, Query, Res, ResMut,
-        Resource, SpatialBundle, Startup, TextBundle, Transform, Update, Vec3, With, Without,
+        EventReader, EventWriter, IntoSystemConfigs, NextState, NodeBundle, OnEnter, Plugin, Query,
+        Res, ResMut, Resource, SpatialBundle, Startup, TextBundle, Transform, Update, Vec3, With,
+        Without,
     },
     scene::SceneBundle,
     text::{Text, TextStyle},
@@ -61,7 +62,7 @@ enum EnemyType {
 impl Plugin for EnemyWavePlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.add_event::<NewWaveEvent>()
-            .add_systems(Startup, (init_enemy_waves, init_ui))
+            .add_systems(OnEnter(GameState::Game), (init_enemy_waves, init_ui))
             .add_systems(
                 Update,
                 (
@@ -218,6 +219,7 @@ fn change_wave(
     mut ev: EventWriter<NewWaveEvent>,
     asset_server: Res<AssetServer>,
     mut ai_state: ResMut<EnemyAIState>,
+    mut next_state: ResMut<NextState<GameState>>,
     enemies: Query<With<Enemy>>,
 ) {
     if !enemies.is_empty() {
@@ -231,6 +233,7 @@ fn change_wave(
     });
     if ai_state.current_wave >= waves.len() as u32 {
         println!("Done with all waves!");
+        next_state.set(GameState::Menu);
         return;
     }
 
@@ -243,10 +246,7 @@ fn update_ui(
     mut ui: Query<&mut Text, With<WaveUI>>,
 ) {
     for event in er.iter() {
-        println!("Got new event!!");
         for mut text in ui.iter_mut() {
-            let t = format!("Wave: {}", event.wave);
-            println!("{}", t);
             *text = Text::from_section(
                 format!("Wave: {}", event.wave),
                 TextStyle {
