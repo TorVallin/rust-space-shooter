@@ -15,7 +15,7 @@ use bevy::{
         Commands, Component, DespawnRecursiveExt, Entity, EventWriter, Input, IntoSystemConfigs,
         KeyCode, Mesh, OnEnter, PbrBundle, PluginGroup, PointLight, PointLightBundle, Quat, Query,
         Res, ResMut, Resource, SpatialBundle, StandardMaterial, Startup, Transform, Update, Vec2,
-        Vec3, With, Without,
+        Vec3, With, Without, OnExit,
     },
     render::{
         settings::{WgpuFeatures, WgpuSettings},
@@ -93,6 +93,7 @@ fn main() {
             OnEnter(GameState::Game), // run if in game state
             setup_game_state,
         )
+        .add_systems(OnExit(GameState::Game), destroy_entities)
         .add_systems(
             Update,
             (
@@ -135,6 +136,9 @@ fn setup_game_state(
     mut game: ResMut<GameResources>,
 ) {
     game.score = 0;
+    if let Some(player) = game.player {
+        commands.entity(player).despawn_recursive();
+    }
 
     game.player = Some(
         commands
@@ -172,6 +176,12 @@ fn setup_game_state(
         },
         ..Default::default()
     });
+}
+
+fn destroy_entities(mut commands: Commands, query: Query<Entity, With<Bullet>>) {
+    for bullet in query.iter() {
+        commands.entity(bullet).despawn_recursive();
+    }
 }
 
 fn setup_particle_systems(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {

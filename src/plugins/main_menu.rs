@@ -65,7 +65,7 @@ fn init_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         .insert(MainUiRoot {});
 }
 
-fn destroy_ui(mut commands: Commands, mut root_query: Query<Entity, With<MainUiRoot>>) {
+fn destroy_ui(mut commands: Commands, root_query: Query<Entity, With<MainUiRoot>>) {
     for ui in root_query.iter() {
         commands.entity(ui).despawn_recursive();
     }
