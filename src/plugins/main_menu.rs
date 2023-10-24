@@ -2,7 +2,7 @@ use bevy::{
     prelude::{
         default, in_state, App, AssetServer, BuildChildren, Button, ButtonBundle, Changed, Color,
         Commands, Component, IntoSystemConfigs, NextState, NodeBundle, OnEnter, OnExit, Plugin,
-        Query, Res, ResMut, Startup, TextBundle, Update, With, Entity, DespawnRecursiveExt,
+        Query, Res, ResMut, TextBundle, Update, With, Entity, DespawnRecursiveExt,
     },
     text::TextStyle,
     ui::{AlignItems, BackgroundColor, BorderColor, Interaction, JustifyContent, Style, Val},

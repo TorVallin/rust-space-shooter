@@ -22,7 +22,7 @@ use crate::{
     state::GameState,
 };
 
-const ENEMY_COOLDOWN_RANGE_S: (f32, f32) = (1.0, 2.0);
+const ENEMY_COOLDOWN_RANGE_S: (f32, f32) = (2.0, 3.0);
 const ENEMY_FIRE_PROBABILITY: f32 = 0.5;
 const ENEMY_MOVE_DURATION_S: f32 = 2.0;
 const ENEMY_MOVE_VELOCITY: f32 = 0.75;

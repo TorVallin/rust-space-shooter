@@ -12,9 +12,9 @@ use bevy::{
     core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     prelude::{
         in_state, App, AssetServer, Assets, Camera, Camera3dBundle, Commands, Component,
-        DespawnRecursiveExt, Entity, EventWriter, Input, IntoSystemConfigs, KeyCode, Mesh, OnEnter,
-        OnExit, PluginGroup, PointLight, PointLightBundle, Quat, Query, Res, ResMut, Resource,
-        StandardMaterial, Startup, Transform, Update, Vec2, Vec3, With, Without, NextState,
+        DespawnRecursiveExt, Entity, EventWriter, Input, IntoSystemConfigs, KeyCode, Mesh,
+        NextState, OnEnter, OnExit, PluginGroup, PointLight, PointLightBundle, Quat, Query, Res,
+        ResMut, Resource, StandardMaterial, Startup, Transform, Update, Vec2, Vec3, With, Without,
     },
     render::{
         settings::{WgpuFeatures, WgpuSettings},
@@ -103,6 +103,7 @@ fn main() {
                 check_bullet_damage,
                 create_explosion_particle_system,
                 on_hit_camera_shake,
+                destroy_bullets,
             )
                 .run_if(in_state(GameState::Game)),
         )
@@ -289,7 +290,6 @@ fn check_bullet_damage(
     for (damageable_entity, mut damageable, position) in damageables.iter_mut() {
         for (bullet_entity, bullet) in &bullets {
             // Check what the bullets are hitting
-
             // Checks for intersections between Damageable things and the bullets
             if rapier_context.intersection_pair(damageable_entity, bullet_entity) == Some(true) {
                 damageable.health = damageable.health.checked_sub(bullet.damage).unwrap_or(0);
@@ -332,6 +332,18 @@ fn bullet_controls(
     for (mut transform, bullet) in bullets.iter_mut() {
         let direction = if bullet.up_direction { -1.0 } else { 1.0 };
         transform.translation.z += direction * bullet.velocity * delta_time;
+    }
+}
+
+pub fn destroy_bullets(
+    mut commands: Commands,
+    bullets: Query<(Entity, &Transform), (With<Bullet>, With<Collider>)>,
+) {
+    for (bullet_entity, bullet_transform) in bullets.iter() {
+        // Despawn due to out of bounds
+        if f32::abs(bullet_transform.translation.z) > 20. {
+            commands.entity(bullet_entity).despawn_recursive();
+        }
     }
 }
 
