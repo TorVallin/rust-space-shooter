@@ -2,10 +2,11 @@ use std::ops::{Mul, Sub};
 
 use bevy::{
     prelude::{
-        default, in_state, AssetServer, BuildChildren, Color, Commands, Component, Entity, Event,
-        EventReader, EventWriter, IntoSystemConfigs, NextState, NodeBundle, OnEnter, Plugin, Query,
-        Res, ResMut, Resource, SpatialBundle, Startup, TextBundle, Transform, Update, Vec3, With,
-        Without, OnExit, DespawnRecursiveExt,
+        default, in_state, AssetServer, Assets, BuildChildren, Color, Commands, Component,
+        DespawnRecursiveExt, Entity, Event, EventReader, EventWriter, IntoSystemConfigs, Mesh,
+        NextState, NodeBundle, OnEnter, OnExit, Plugin, Query, Res, ResMut, Resource,
+        SpatialBundle, StandardMaterial, Startup, TextBundle, Transform, Update, Vec3, With,
+        Without,
     },
     scene::SceneBundle,
     text::{Text, TextStyle},
@@ -15,8 +16,14 @@ use bevy::{
 use bevy_rapier3d::prelude::{ActiveEvents, Collider, GravityScale, RigidBody, Sensor, Velocity};
 use rand::Rng;
 
-use crate::{combat::Damageable, enemy::Enemy, state::GameState};
+use crate::{
+    combat::{spawn_bullet, Damageable},
+    enemy::Enemy,
+    state::GameState,
+};
 
+const ENEMY_COOLDOWN_RANGE_S: (f32, f32) = (1.0, 2.0);
+const ENEMY_FIRE_PROBABILITY: f32 = 0.5;
 const ENEMY_MOVE_DURATION_S: f32 = 2.0;
 const ENEMY_MOVE_VELOCITY: f32 = 0.75;
 
@@ -66,7 +73,7 @@ impl Plugin for EnemyWavePlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.add_event::<NewWaveEvent>()
             .add_systems(OnEnter(GameState::Game), (init_enemy_waves, init_ui))
-            .add_systems(OnExit(GameState::Game), destroy_ui)
+            .add_systems(OnExit(GameState::Game), (destroy_ui, destroy_enemies))
             .add_systems(
                 Update,
                 (
@@ -125,6 +132,12 @@ fn destroy_ui(mut commands: Commands, root_query: Query<Entity, With<RootWaveUI>
     }
 }
 
+fn destroy_enemies(mut commands: Commands, enemies: Query<Entity, With<Enemy>>) {
+    for enemy in enemies.iter() {
+        commands.entity(enemy).despawn_recursive();
+    }
+}
+
 fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetServer>) {
     let waves = get_waves();
     let wave = waves.get(wave_id).unwrap();
@@ -137,7 +150,10 @@ fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetSer
 
     for enemy in wave.enemies.iter() {
         commands
-            .spawn(Enemy {})
+            .spawn(Enemy {
+                shot_cooldown_timer: rng
+                    .gen_range(ENEMY_COOLDOWN_RANGE_S.0..=ENEMY_COOLDOWN_RANGE_S.1),
+            })
             .insert(Velocity::default())
             .insert(SpatialBundle {
                 transform: Transform::from_translation(Vec3::new(
@@ -179,9 +195,12 @@ fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetSer
 }
 
 fn update_enemies(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     mut ai_state: ResMut<EnemyAIState>,
     time: Res<Time>,
-    mut enemies: Query<&mut Velocity, (With<Enemy>, Without<MoveToTarget>)>,
+    mut enemies: Query<(&mut Enemy, &mut Velocity, &Transform), Without<MoveToTarget>>,
     move_to_target: Query<Entity, With<MoveToTarget>>,
 ) {
     // Ensure all (non-dead) enemies have finished moving to the target position before
@@ -196,12 +215,31 @@ fn update_enemies(
         ai_state.move_timer = ENEMY_MOVE_DURATION_S;
     }
 
-    for mut enemy_vel in enemies.iter_mut() {
+    let mut rng = rand::thread_rng();
+    for (mut enemy, mut enemy_vel, transform) in enemies.iter_mut() {
         enemy_vel.linvel.x = if ai_state.moving_left {
             -ENEMY_MOVE_VELOCITY
         } else {
             ENEMY_MOVE_VELOCITY
         };
+
+        // Fire with a certain probability, otherwise skip the turn and just wait for the cooldown again
+        enemy.shot_cooldown_timer -= time.delta_seconds();
+        if enemy.shot_cooldown_timer <= 0.0 {
+            if rng.gen::<f32>() < ENEMY_FIRE_PROBABILITY {
+                // Fire!
+                spawn_bullet(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    transform.translation,
+                    false,
+                );
+            }
+
+            enemy.shot_cooldown_timer =
+                rng.gen_range(ENEMY_COOLDOWN_RANGE_S.0..=ENEMY_COOLDOWN_RANGE_S.1);
+        }
     }
 }
 

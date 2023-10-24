@@ -11,11 +11,10 @@ use crate::plugins::enemy_wave_plugin::EnemyWavePlugin;
 use bevy::{
     core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     prelude::{
-        in_state, shape, App, AssetServer, Assets, BuildChildren, Camera, Camera3dBundle, Color,
-        Commands, Component, DespawnRecursiveExt, Entity, EventWriter, Input, IntoSystemConfigs,
-        KeyCode, Mesh, OnEnter, PbrBundle, PluginGroup, PointLight, PointLightBundle, Quat, Query,
-        Res, ResMut, Resource, SpatialBundle, StandardMaterial, Startup, Transform, Update, Vec2,
-        Vec3, With, Without, OnExit,
+        in_state, App, AssetServer, Assets, Camera, Camera3dBundle, Commands, Component,
+        DespawnRecursiveExt, Entity, EventWriter, Input, IntoSystemConfigs, KeyCode, Mesh, OnEnter,
+        OnExit, PluginGroup, PointLight, PointLightBundle, Quat, Query, Res, ResMut, Resource,
+        StandardMaterial, Startup, Transform, Update, Vec2, Vec3, With, Without, NextState,
     },
     render::{
         settings::{WgpuFeatures, WgpuSettings},
@@ -23,7 +22,6 @@ use bevy::{
     },
     scene::SceneBundle,
     time::Time,
-    transform::TransformBundle,
     window::Window,
     DefaultPlugins,
 };
@@ -36,7 +34,10 @@ use bevy_rapier3d::{
     render::RapierDebugRenderPlugin,
 };
 use camera::{on_hit_camera_shake, CameraShakeEvent, CameraState};
-use combat::{Bullet, Damageable, EntityDeath, LargeHitEffect, ParticleHitEffect, SmallHitEffect};
+use combat::{
+    spawn_bullet, Bullet, Damageable, EntityDeath, LargeHitEffect, ParticleHitEffect,
+    SmallHitEffect,
+};
 use particles::create_effect;
 use plugins::{
     enemy_wave_plugin::EnemyAIState,
@@ -137,7 +138,9 @@ fn setup_game_state(
 ) {
     game.score = 0;
     if let Some(player) = game.player {
-        commands.entity(player).despawn_recursive();
+        if let Some(player) = commands.get_entity(player) {
+            player.despawn_recursive();
+        }
     }
 
     game.player = Some(
@@ -152,6 +155,7 @@ fn setup_game_state(
                 ..Default::default()
             })
             .insert(RigidBody::Dynamic)
+            .insert(Sensor {})
             .insert(GravityScale(0.0))
             .insert(Collider::cylinder(0.25, 0.3))
             .insert(ActiveEvents::COLLISION_EVENTS)
@@ -160,6 +164,10 @@ fn setup_game_state(
                 bullet_cooldown: 0.0,
                 bullet_cooldown_timer: 0.25,
                 active_powerup: None,
+            })
+            .insert(Damageable {
+                health: 5,
+                is_player: true,
             })
             .id(),
     );
@@ -193,6 +201,7 @@ fn player_controls(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut next_state: ResMut<NextState<GameState>>,
     input: Res<Input<KeyCode>>,
     game: ResMut<GameResources>,
     mut player_query: Query<(&mut Transform, &mut Player, Option<&PowerupComponent>)>,
@@ -203,7 +212,13 @@ fn player_controls(
     }
     let player_entity = game.player.unwrap();
 
-    let mut player = player_query.get_mut(player_entity).unwrap();
+    let query = player_query.get_mut(player_entity);
+    if query.is_err() {
+        next_state.set(GameState::Menu);
+        return;
+    }
+
+    let mut player = query.unwrap();
     let mut translation = player.0.translation;
 
     let move_speed = 3.0;
@@ -253,6 +268,7 @@ fn player_controls(
                 &mut meshes,
                 &mut materials,
                 translation.add(pos),
+                true,
             );
         }
     }
@@ -295,13 +311,13 @@ fn check_bullet_damage(
                         intensity = 1.0;
                         entity_died = true;
                     }
-                }
 
-                ev.send(CameraShakeEvent { intensity });
-                commands.spawn(ParticleHitEffect {
-                    position: position.translation,
-                    is_large: entity_died,
-                });
+                    ev.send(CameraShakeEvent { intensity });
+                    commands.spawn(ParticleHitEffect {
+                        position: position.translation,
+                        is_large: entity_died,
+                    });
+                }
             }
         }
     }
@@ -358,41 +374,4 @@ fn create_explosion_particle_system(
         }
         commands.entity(entity).despawn();
     }
-}
-
-fn spawn_bullet(
-    commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
-    translation: Vec3,
-) {
-    commands
-        .spawn(SpatialBundle::default())
-        .insert(Collider::cuboid(0.05, 0.05, 0.1))
-        .insert(Sensor)
-        .insert(Bullet {
-            is_player_bullet: true,
-            up_direction: true,
-            velocity: 7.5,
-            damage: 1,
-        })
-        .insert(ActiveEvents::COLLISION_EVENTS)
-        .insert(TransformBundle::from(Transform::from_translation(
-            translation,
-        )))
-        .with_children(|children| {
-            children.spawn(PbrBundle {
-                mesh: meshes.add(Mesh::from(shape::Capsule {
-                    radius: 0.05,
-                    depth: 0.10,
-                    ..Default::default()
-                })),
-                transform: Transform::from_rotation(Quat::from_rotation_x(-90.0f32.to_radians())),
-                material: materials.add(StandardMaterial {
-                    emissive: Color::rgb_linear(35.0, 1.0, 2.0),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            });
-        });
 }
