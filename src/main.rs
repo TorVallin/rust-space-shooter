@@ -11,10 +11,9 @@ use bevy::{
     core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     prelude::{
         shape, App, AssetServer, Assets, BuildChildren, Camera, Camera3dBundle, Color, Commands,
-        Component, DespawnRecursiveExt, Entity, EventWriter, Input, KeyCode, Mesh, Name, PbrBundle,
+        Component, DespawnRecursiveExt, Entity, EventWriter, Input, KeyCode, Mesh, PbrBundle,
         PluginGroup, PointLight, PointLightBundle, Quat, Query, Res, ResMut, Resource,
-        SpatialBundle, StandardMaterial, Startup, Transform, Update, Vec2, Vec3, Vec4, With,
-        Without,
+        SpatialBundle, StandardMaterial, Startup, Transform, Update, Vec2, Vec3, With, Without,
     },
     render::{
         settings::{WgpuFeatures, WgpuSettings},
@@ -256,7 +255,7 @@ fn check_bullet_damage(
                 // Prevent the player from damaging itself & enemies from damaging eachother
                 if damageable.is_player != bullet.is_player_bullet {
                     commands.entity(bullet_entity).despawn_recursive();
-                    if damageable.health <= 0 {
+                    if damageable.health == 0 {
                         commands.entity(damageable_entity).despawn_recursive();
 
                         // Spawn a particle system as a death effect

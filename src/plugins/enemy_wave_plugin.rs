@@ -1,10 +1,9 @@
 use std::ops::{Mul, Sub};
 
 use bevy::{
-    ecs::system::Command,
     prelude::{
         default, AssetServer, BuildChildren, Color, Commands, Component, Entity, Event,
-        EventReader, EventWriter, Label, NodeBundle, Plugin, Query, Res, ResMut, Resource,
+        EventReader, EventWriter, NodeBundle, Plugin, Query, Res, ResMut, Resource,
         SpatialBundle, Startup, TextBundle, Transform, Update, Vec3, With, Without,
     },
     scene::SceneBundle,
