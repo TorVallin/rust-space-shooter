@@ -117,6 +117,7 @@ fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetSer
     let waves = get_waves();
     let wave = waves.get(wave_id).unwrap();
 
+    let z_starting_pos_offset = -3.0;
     let x_spacing = 0.5;
     let z_spacing = 1.0;
 
@@ -130,7 +131,9 @@ fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetSer
                 transform: Transform::from_translation(Vec3::new(
                     enemy.position[0] as f32 * x_spacing + rng.gen_range(-7.0..7.0),
                     0.0,
-                    enemy.position[1] as f32 * z_spacing + rng.gen_range(-7.0..-1.0),
+                    enemy.position[1] as f32 * z_spacing
+                        + z_starting_pos_offset
+                        + rng.gen_range(-7.0..-1.0),
                 )),
                 ..Default::default()
             })
@@ -142,7 +145,7 @@ fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetSer
                 target: Vec3::new(
                     enemy.position[0] as f32 * x_spacing,
                     0.,
-                    enemy.position[1] as f32 * z_spacing,
+                    enemy.position[1] as f32 * z_spacing + z_starting_pos_offset,
                 ),
             })
             .insert(RigidBody::Dynamic)
@@ -161,72 +164,6 @@ fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetSer
                 });
             });
     }
-}
-
-// TODO: Specify this in e.g. a JSON file later?
-fn get_waves() -> Vec<Wave> {
-    let waves: Vec<Wave> = vec![
-        Wave {
-            enemies: vec![
-                EnemyInstance {
-                    position: [-1, -1],
-                    ship_type: EnemyType::Type1,
-                    health: 2,
-                },
-                EnemyInstance {
-                    position: [-1, -2],
-                    ship_type: EnemyType::Type1,
-                    health: 2,
-                },
-                EnemyInstance {
-                    position: [1, -1],
-                    ship_type: EnemyType::Type1,
-                    health: 2,
-                },
-                EnemyInstance {
-                    position: [1, -2],
-                    ship_type: EnemyType::Type1,
-                    health: 2,
-                },
-            ],
-        },
-        Wave {
-            enemies: vec![
-                EnemyInstance {
-                    position: [-1, -1],
-                    ship_type: EnemyType::Type1,
-                    health: 2,
-                },
-                EnemyInstance {
-                    position: [-1, -2],
-                    ship_type: EnemyType::Type1,
-                    health: 2,
-                },
-                EnemyInstance {
-                    position: [1, -1],
-                    ship_type: EnemyType::Type1,
-                    health: 2,
-                },
-                EnemyInstance {
-                    position: [1, -2],
-                    ship_type: EnemyType::Type1,
-                    health: 2,
-                },
-                EnemyInstance {
-                    position: [3, -1],
-                    ship_type: EnemyType::Type1,
-                    health: 2,
-                },
-                EnemyInstance {
-                    position: [3, -2],
-                    ship_type: EnemyType::Type1,
-                    health: 2,
-                },
-            ],
-        },
-    ];
-
-    waves
 }
 
 fn update_enemies(
@@ -340,4 +277,32 @@ impl Default for EnemyAIState {
             moving_left: true,
         }
     }
+}
+
+// TODO: Specify this in e.g. a JSON file later?
+fn get_waves() -> Vec<Wave> {
+    let mut enemies0 = Vec::new();
+    for col in (-4..=4).step_by(2) {
+        for row in -1..=1 {
+            enemies0.push(EnemyInstance {
+                position: [col, row],
+                ship_type: EnemyType::Type1,
+                health: 2,
+            });
+        }
+    }
+
+    let mut enemies1 = Vec::new();
+    for col in (-5..=5).step_by(2) {
+        for row in -2..=2 {
+            enemies1.push(EnemyInstance {
+                position: [col, row],
+                ship_type: EnemyType::Type1,
+                health: 2,
+            });
+        }
+    }
+
+    let waves: Vec<Wave> = vec![Wave { enemies: enemies0 }, Wave { enemies: enemies1 }];
+    waves
 }
