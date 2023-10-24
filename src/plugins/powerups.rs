@@ -3,8 +3,8 @@ use std::borrow::BorrowMut;
 use bevy::{
     prelude::{
         shape, Assets, BuildChildren, Color, Commands, Component, DespawnRecursiveExt, Entity,
-        Mesh, PbrBundle, Plugin, Quat, Query, Res, ResMut, SpatialBundle, StandardMaterial,
-        Transform, Update, Vec3, With, Without,
+        IntoSystemConfigs, Mesh, PbrBundle, Plugin, Quat, Query, Res, ResMut, SpatialBundle,
+        StandardMaterial, Transform, Update, Vec3, With, Without, in_state,
     },
     time::Time,
     transform::TransformBundle,
@@ -12,7 +12,7 @@ use bevy::{
 use bevy_rapier3d::prelude::{Collider, GravityScale, RapierContext, RigidBody, Sensor, Velocity};
 use rand::Rng;
 
-use crate::{combat::EntityDeath, Player};
+use crate::{combat::EntityDeath, state::GameState, Player};
 
 #[derive(PartialEq, Eq, Clone)]
 pub enum Powerup {
@@ -37,7 +37,7 @@ impl Plugin for PowerupPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.add_systems(
             Update,
-            (update_powerups, spawn_powerups, detect_powerup_collisions),
+            (update_powerups, spawn_powerups, detect_powerup_collisions).run_if(in_state(GameState::Game)),
         );
     }
 }
