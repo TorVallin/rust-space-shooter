@@ -5,7 +5,7 @@ use bevy::{
         default, in_state, AssetServer, BuildChildren, Color, Commands, Component, Entity, Event,
         EventReader, EventWriter, IntoSystemConfigs, NextState, NodeBundle, OnEnter, Plugin, Query,
         Res, ResMut, Resource, SpatialBundle, Startup, TextBundle, Transform, Update, Vec3, With,
-        Without,
+        Without, OnExit, DespawnRecursiveExt,
     },
     scene::SceneBundle,
     text::{Text, TextStyle},
@@ -53,6 +53,9 @@ struct MoveToTarget {
 #[derive(Component)]
 struct WaveUI {}
 
+#[derive(Component)]
+struct RootWaveUI {}
+
 enum EnemyType {
     Type1,
     Type2,
@@ -63,6 +66,7 @@ impl Plugin for EnemyWavePlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.add_event::<NewWaveEvent>()
             .add_systems(OnEnter(GameState::Game), (init_enemy_waves, init_ui))
+            .add_systems(OnExit(GameState::Game), destroy_ui)
             .add_systems(
                 Update,
                 (
@@ -111,7 +115,14 @@ fn init_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                     }),
                 )
                 .insert(WaveUI {});
-        });
+        })
+        .insert(RootWaveUI {});
+}
+
+fn destroy_ui(mut commands: Commands, root_query: Query<Entity, With<RootWaveUI>>) {
+    for ui in root_query.iter() {
+        commands.entity(ui).despawn_recursive();
+    }
 }
 
 fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetServer>) {
