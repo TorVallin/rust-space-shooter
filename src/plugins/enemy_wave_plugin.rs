@@ -2,9 +2,9 @@ use std::ops::{Mul, Sub};
 
 use bevy::{
     prelude::{
-        default, AssetServer, BuildChildren, Color, Commands, Component, Entity, Event,
-        EventReader, EventWriter, NodeBundle, Plugin, Query, Res, ResMut, Resource,
-        SpatialBundle, Startup, TextBundle, Transform, Update, Vec3, With, Without,
+        default, in_state, AssetServer, BuildChildren, Color, Commands, Component, Entity, Event,
+        EventReader, EventWriter, IntoSystemConfigs, NodeBundle, Plugin, Query, Res, ResMut,
+        Resource, SpatialBundle, Startup, TextBundle, Transform, Update, Vec3, With, Without,
     },
     scene::SceneBundle,
     text::{Text, TextStyle},
@@ -14,7 +14,7 @@ use bevy::{
 use bevy_rapier3d::prelude::{ActiveEvents, Collider, GravityScale, RigidBody, Sensor, Velocity};
 use rand::Rng;
 
-use crate::{combat::Damageable, enemy::Enemy};
+use crate::{combat::Damageable, enemy::Enemy, state::GameState};
 
 const ENEMY_MOVE_DURATION_S: f32 = 2.0;
 const ENEMY_MOVE_VELOCITY: f32 = 0.75;
@@ -69,7 +69,8 @@ impl Plugin for EnemyWavePlugin {
                     update_move_to_target,
                     change_wave,
                     update_ui,
-                ),
+                )
+                    .run_if(in_state(GameState::Game)),
             );
     }
 }

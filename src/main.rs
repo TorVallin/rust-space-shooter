@@ -3,6 +3,7 @@ mod combat;
 mod enemy;
 mod particles;
 mod plugins;
+mod state;
 
 use std::ops::Add;
 
@@ -10,10 +11,11 @@ use crate::plugins::enemy_wave_plugin::EnemyWavePlugin;
 use bevy::{
     core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     prelude::{
-        shape, App, AssetServer, Assets, BuildChildren, Camera, Camera3dBundle, Color, Commands,
-        Component, DespawnRecursiveExt, Entity, EventWriter, Input, KeyCode, Mesh, PbrBundle,
-        PluginGroup, PointLight, PointLightBundle, Quat, Query, Res, ResMut, Resource,
-        SpatialBundle, StandardMaterial, Startup, Transform, Update, Vec2, Vec3, With, Without,
+        in_state, shape, App, AssetServer, Assets, BuildChildren, Camera, Camera3dBundle, Color,
+        Commands, Component, DespawnRecursiveExt, Entity, EventWriter, Input, IntoSystemConfigs,
+        KeyCode, Mesh, PbrBundle, PluginGroup, PointLight, PointLightBundle, Quat, Query, Res,
+        ResMut, Resource, SpatialBundle, StandardMaterial, Startup, Transform, Update, Vec2, Vec3,
+        With, Without,
     },
     render::{
         settings::{WgpuFeatures, WgpuSettings},
@@ -40,6 +42,7 @@ use plugins::{
     enemy_wave_plugin::EnemyAIState,
     powerups::{Powerup, PowerupComponent, PowerupPlugin},
 };
+use state::GameState;
 
 #[derive(Component, Default)]
 struct Player {
@@ -50,7 +53,7 @@ struct Player {
 }
 
 #[derive(Resource, Default)]
-struct GameState {
+struct GameResources {
     player: Option<Entity>,
     score: u32,
 }
@@ -67,28 +70,40 @@ fn main() {
         .set(WgpuFeatures::VERTEX_WRITABLE_STORAGE, true);
 
     App::new()
-        .insert_resource(ResolutionSettings {
-            standard: Vec2::new(600.0, 1000.0),
-        })
-        .insert_resource(EnemyAIState::default())
-        .insert_resource(CameraState::default())
-        .init_resource::<GameState>()
-        .add_event::<CameraShakeEvent>()
         .add_plugins(DefaultPlugins.set(RenderPlugin { wgpu_settings }))
         .add_plugins(HanabiPlugin)
         .add_plugins(bevy_obj::ObjPlugin)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
         .add_plugins((EnemyWavePlugin, PowerupPlugin))
-        .add_systems(Startup, set_resolution)
+        .add_state::<GameState>()
+        .init_resource::<GameResources>()
+        .insert_resource(ResolutionSettings {
+            standard: Vec2::new(600.0, 1000.0),
+        })
+        .insert_resource(EnemyAIState::default())
+        .insert_resource(CameraState::default())
+        .add_event::<CameraShakeEvent>()
         .add_systems(
             Startup,
-            (setup_cameras, setup_game_state, setup_particle_systems),
+            (
+                set_resolution,
+                setup_cameras,
+                setup_game_state,
+                setup_particle_systems,
+            ),
         )
-        .add_systems(Update, (player_controls, bullet_controls))
-        .add_systems(Update, check_bullet_damage)
-        .add_systems(Update, create_explosion_particle_system)
-        .add_systems(Update, on_hit_camera_shake)
+        .add_systems(
+            Update,
+            (
+                player_controls,
+                bullet_controls,
+                check_bullet_damage,
+                create_explosion_particle_system,
+                on_hit_camera_shake,
+            )
+                .run_if(in_state(GameState::Game)),
+        )
         .run();
 }
 
@@ -98,7 +113,7 @@ fn set_resolution(mut windows: Query<&mut Window>, resolution: Res<ResolutionSet
     window.resolution.set(resolution.x, resolution.y);
 }
 
-fn setup_cameras(mut commands: Commands, _: ResMut<GameState>, camera_state: Res<CameraState>) {
+fn setup_cameras(mut commands: Commands, _: ResMut<GameResources>, camera_state: Res<CameraState>) {
     commands.spawn((
         Camera3dBundle {
             camera: Camera {
@@ -117,7 +132,7 @@ fn setup_cameras(mut commands: Commands, _: ResMut<GameState>, camera_state: Res
 fn setup_game_state(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut game: ResMut<GameState>,
+    mut game: ResMut<GameResources>,
 ) {
     game.score = 0;
 
@@ -169,7 +184,7 @@ fn player_controls(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     input: Res<Input<KeyCode>>,
-    game: ResMut<GameState>,
+    game: ResMut<GameResources>,
     mut player_query: Query<(&mut Transform, &mut Player, Option<&PowerupComponent>)>,
     time: Res<Time>,
 ) {
@@ -281,7 +296,7 @@ fn check_bullet_damage(
 }
 
 fn bullet_controls(
-    _: ResMut<GameState>,
+    _: ResMut<GameResources>,
     mut bullets: Query<(&mut Transform, &Bullet), With<Collider>>,
     time: Res<Time>,
 ) {
