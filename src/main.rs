@@ -188,7 +188,7 @@ fn setup_game_state(
             ..Default::default()
         },
         transform: Transform {
-            translation: Vec3::new(5.0, 10.0, -5.0),
+            translation: Vec3::new(8.0, 10.0, 0.0),
             ..Default::default()
         },
         ..Default::default()

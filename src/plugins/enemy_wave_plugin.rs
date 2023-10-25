@@ -73,7 +73,10 @@ impl Plugin for EnemyWavePlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.add_event::<NewWaveEvent>()
             .add_systems(OnEnter(GameState::Game), (init_enemy_waves, init_ui))
-            .add_systems(OnExit(GameState::Game), (destroy_ui, destroy_enemies))
+            .add_systems(
+                OnExit(GameState::Game),
+                (destroy_ui, destroy_enemies, reset_ai_state),
+            )
             .add_systems(
                 Update,
                 (
@@ -136,6 +139,10 @@ fn destroy_enemies(mut commands: Commands, enemies: Query<Entity, With<Enemy>>) 
     for enemy in enemies.iter() {
         commands.entity(enemy).despawn_recursive();
     }
+}
+
+fn reset_ai_state(mut state: ResMut<EnemyAIState>) {
+    *state = EnemyAIState::default();
 }
 
 fn spawn_wave(wave_id: usize, mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -346,7 +353,7 @@ fn get_waves() -> Vec<Wave> {
         for row in -2..=2 {
             enemies1.push(EnemyInstance {
                 position: [col, row],
-                ship_type: EnemyType::Type1,
+                ship_type: EnemyType::Type2,
                 health: 2,
             });
         }

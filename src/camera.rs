@@ -31,8 +31,6 @@ pub fn on_hit_camera_shake(
         } else {
             let mut rng = rand::thread_rng();
 
-            // Clamp intensity to prevent drastic camera movement
-            camera_state.shake_intensity = f32::clamp(camera_state.shake_intensity, 0.0, 2.0);
             // Shake!
             let rand_x = rng.gen_range(-0.1..0.1) * camera_state.shake_intensity;
             let rand_z = rng.gen_range(-0.1..0.1) * camera_state.shake_intensity;
@@ -44,6 +42,10 @@ pub fn on_hit_camera_shake(
     for event in er.iter() {
         camera_state.shake_duration += 0.1;
         camera_state.shake_intensity += event.intensity;
+
+        // Clamp intensity & duration to prevent drastic camera movement
+        camera_state.shake_duration = f32::clamp(camera_state.shake_duration, 0.0, 0.25);
+        camera_state.shake_intensity = f32::clamp(camera_state.shake_intensity, 0.0, 1.5);
     }
 }
 
