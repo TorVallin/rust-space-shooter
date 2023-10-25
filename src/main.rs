@@ -11,10 +11,11 @@ use crate::plugins::enemy_wave_plugin::EnemyWavePlugin;
 use bevy::{
     core_pipeline::{bloom::BloomSettings, tonemapping::Tonemapping},
     prelude::{
-        in_state, App, AssetServer, Assets, Camera, Camera3dBundle, Commands, Component,
-        DespawnRecursiveExt, Entity, EventWriter, Input, IntoSystemConfigs, KeyCode, Mesh,
-        NextState, OnEnter, OnExit, PluginGroup, PointLight, PointLightBundle, Quat, Query, Res,
-        ResMut, Resource, StandardMaterial, Startup, Transform, Update, Vec2, Vec3, With, Without,
+        in_state, shape, AlphaMode, App, AssetServer, Assets, Camera, Camera3dBundle, Commands,
+        Component, DespawnRecursiveExt, Entity, EventWriter, Input, IntoSystemConfigs, KeyCode,
+        Mesh, NextState, OnEnter, OnExit, PbrBundle, PluginGroup, PointLight, PointLightBundle,
+        Quat, Query, Res, ResMut, Resource, StandardMaterial, Startup, Transform, Update, Vec2,
+        Vec3, With, Without,
     },
     render::{
         settings::{WgpuFeatures, WgpuSettings},
@@ -65,6 +66,9 @@ struct ResolutionSettings {
     standard: Vec2,
 }
 
+#[derive(Component)]
+struct Background;
+
 fn main() {
     let mut wgpu_settings = WgpuSettings::default();
     wgpu_settings
@@ -88,7 +92,12 @@ fn main() {
         .add_event::<CameraShakeEvent>()
         .add_systems(
             Startup,
-            (set_resolution, setup_cameras, setup_particle_systems),
+            (
+                set_resolution,
+                setup_cameras,
+                setup_particle_systems,
+                setup_background,
+            ),
         )
         .add_systems(
             OnEnter(GameState::Game), // run if in game state
@@ -175,12 +184,11 @@ fn setup_game_state(
 
     commands.spawn(PointLightBundle {
         point_light: PointLight {
-            intensity: 1500.0,
-            shadows_enabled: true,
+            intensity: 15000.0,
             ..Default::default()
         },
         transform: Transform {
-            translation: Vec3::new(3.0, 2.0, 0.0),
+            translation: Vec3::new(5.0, 10.0, -5.0),
             ..Default::default()
         },
         ..Default::default()
@@ -196,6 +204,42 @@ fn destroy_entities(mut commands: Commands, query: Query<Entity, With<Bullet>>) 
 fn setup_particle_systems(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {
     create_effect("death_effect", 1000., true, &mut effects, &mut commands);
     create_effect("hit_effect", 50., false, &mut effects, &mut commands);
+}
+
+fn setup_background(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let bg_texture_handle = asset_server.load("background.png");
+
+    let aspect_ratio = 1.7778;
+    let width = 8.0;
+    let quad_handle = meshes.add(Mesh::from(shape::Quad::new(Vec2::new(
+        width,
+        width * aspect_ratio,
+    ))));
+
+    let material_handle = materials.add(StandardMaterial {
+        base_color_texture: Some(bg_texture_handle),
+        // alpha_mode: AlphaMode::Blend,
+        ..Default::default()
+    });
+
+    commands.spawn(PbrBundle {
+        mesh: quad_handle.clone(),
+        material: material_handle.clone(),
+        transform: Transform::from_xyz(0.0, -0.5, 0.0)
+            .with_rotation(Quat::from_rotation_x(-90.0f32.to_radians()))
+            // .with_scale(Vec3::new(1.0 * width, 1.0 * width * aspect_ratio, 1.0 * width * aspect_ratio)),
+            .with_scale(Vec3::new(
+                2.0 * width,
+                2.0,
+                2.0 * width * aspect_ratio,
+            )),
+        ..Default::default()
+    });
 }
 
 fn player_controls(
